@@ -316,6 +316,11 @@ export const TileAttributeSchema = z.discriminatedUnion("kind", [
     damage: z.number().int().positive().max(9999),
   }),
   z.object({
+    kind: z.literal("heal"),
+    label: z.string().min(1).max(80),
+    amount: z.number().int().positive().max(9999),
+  }),
+  z.object({
     kind: z.literal("spawn"),
     label: z.string().min(1).max(80),
     direction: DirectionSchema,

@@ -24,6 +24,10 @@ const ground = Array.from({ length: size }, (_, index) => {
     return 7;
   }
 
+  if (x === 5 && y === 4) {
+    return 8;
+  }
+
   if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
     return 2;
   }
@@ -81,6 +85,14 @@ const attributes: TileAttribute[] = Array.from({ length: size }, (_, index) => {
     return {
       kind: "safeZone",
       label: "Zona Segura do Campo",
+    };
+  }
+
+  if (x === 5 && y === 4) {
+    return {
+      kind: "heal",
+      label: "Fonte de Treino",
+      amount: 18,
     };
   }
 

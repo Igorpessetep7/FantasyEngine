@@ -62,6 +62,7 @@ cp .env.example .env
 - Teleport por evento com destino validado contra colisao no servidor.
 - Atributos de tile com warp aplicado apos movimento validado pelo servidor.
 - Atributos de tile com dano aplicado ao personagem apenas pelo servidor.
+- Atributos de tile com cura aplicada ao personagem apenas pelo servidor.
 - Atributo de tile de spawn usado para criar personagem e respawn autoritativo.
 - Atributo de tile de zona segura bloqueando combate e spells no servidor.
 - Combate com cooldown validado no servidor.

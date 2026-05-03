@@ -319,6 +319,10 @@ async function handleMove(session: Session, direction: EntitySnapshot["direction
         broadcastChat("Sistema", `${session.player.name} retornou para ${respawn.label}.`);
       }
     }
+
+    if (attribute.triggered && attribute.attributeKind === "heal" && (attribute.healing ?? 0) > 0) {
+      broadcastChat("Mapa", `${session.player.name} recuperou ${attribute.healing ?? 0} de vida em ${attribute.label ?? "um tile de cura"}.`);
+    }
   }
 
   await saveSession(session);

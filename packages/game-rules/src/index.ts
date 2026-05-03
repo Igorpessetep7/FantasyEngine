@@ -21,9 +21,10 @@ export interface TeleportResult {
 export interface TileAttributeResult {
   triggered: boolean;
   entity: EntitySnapshot;
-  attributeKind?: "warp" | "damage";
+  attributeKind?: "warp" | "damage" | "heal";
   label?: string;
   damage?: number;
+  healing?: number;
   error?: "blocked_destination";
 }
 
@@ -230,6 +231,21 @@ export function applyTileAttributeEffect(entity: EntitySnapshot, map: MapSnapsho
       attributeKind: "damage",
       label: attribute.label,
       damage: attribute.damage,
+    };
+  }
+
+  if (attribute.kind === "heal") {
+    const nextHp = Math.min(entity.maxHp, entity.hp + attribute.amount);
+
+    return {
+      triggered: true,
+      entity: {
+        ...entity,
+        hp: nextHp,
+      },
+      attributeKind: "heal",
+      label: attribute.label,
+      healing: nextHp - entity.hp,
     };
   }
 
