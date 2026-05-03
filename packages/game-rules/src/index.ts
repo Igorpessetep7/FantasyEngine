@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, PlayerClass, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
+import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDisposition, PlayerClass, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -18,6 +18,8 @@ export function createPlayer(id: string, name: string): EntitySnapshot {
   return {
     id,
     kind: "player",
+    npcDefinitionId: null,
+    disposition: null,
     name,
     x: 4,
     y: 4,
@@ -27,16 +29,68 @@ export function createPlayer(id: string, name: string): EntitySnapshot {
   };
 }
 
-export function createNpc(id: string, name: string, x: number, y: number): EntitySnapshot {
+export interface NpcDefinition {
+  npcDefinitionId: string;
+  name: string;
+  disposition: NpcDisposition;
+  maxHp: number;
+  attackDamage: number;
+  xpReward: number;
+  goldReward: number;
+  respawnMs: number;
+  loot: ItemStack[];
+}
+
+export const starterNpcDefinitions: Record<string, NpcDefinition> = {
+  slime: {
+    npcDefinitionId: "slime",
+    name: "Slime",
+    disposition: "hostile",
+    maxHp: 35,
+    attackDamage: 4,
+    xpReward: 14,
+    goldReward: 3,
+    respawnMs: 5000,
+    loot: [{ itemId: "slime-gel", name: "Gel de Slime", quantity: 1 }],
+  },
+  guard: {
+    npcDefinitionId: "guard",
+    name: "Guardiao",
+    disposition: "hostile",
+    maxHp: 55,
+    attackDamage: 8,
+    xpReward: 35,
+    goldReward: 8,
+    respawnMs: 7000,
+    loot: [{ itemId: "iron-token", name: "Ficha de Ferro", quantity: 2 }],
+  },
+  guide: {
+    npcDefinitionId: "guide",
+    name: "Guia",
+    disposition: "friendly",
+    maxHp: 100,
+    attackDamage: 0,
+    xpReward: 0,
+    goldReward: 0,
+    respawnMs: 0,
+    loot: [],
+  },
+};
+
+export function createNpc(id: string, npcDefinitionId: string, x: number, y: number): EntitySnapshot {
+  const definition = getNpcDefinitionById(npcDefinitionId);
+
   return {
     id,
     kind: "npc",
-    name,
+    npcDefinitionId: definition.npcDefinitionId,
+    disposition: definition.disposition,
+    name: definition.name,
     x,
     y,
     direction: "down",
-    hp: 35,
-    maxHp: 35,
+    hp: definition.maxHp,
+    maxHp: definition.maxHp,
   };
 }
 
@@ -82,7 +136,7 @@ export function applyMoveIntent(entity: EntitySnapshot, direction: Direction, ma
 }
 
 export function applyAttackIntent(attacker: EntitySnapshot, targets: EntitySnapshot[], attackBonus = 0): AttackResult | undefined {
-  const target = targets.find((candidate) => candidate.hp > 0 && isFacingAdjacent(attacker, candidate));
+  const target = targets.find((candidate) => candidate.hp > 0 && isHostileTarget(candidate) && isFacingAdjacent(attacker, candidate));
 
   if (!target) {
     return undefined;
@@ -189,8 +243,9 @@ export function createInitialProgress(): PlayerProgress {
 }
 
 export function awardNpcDefeat(progress: PlayerProgress, npc: EntitySnapshot): ProgressAward {
-  const xpGained = npc.name === "Guardiao" ? 35 : 14;
-  const goldGained = npc.name === "Guardiao" ? 8 : 3;
+  const definition = getNpcDefinitionForEntity(npc);
+  const xpGained = definition?.xpReward ?? 0;
+  const goldGained = definition?.goldReward ?? 0;
   let level = progress.level;
   let xp = progress.xp + xpGained;
   let xpToNext = getXpToNextLevel(level);
@@ -214,6 +269,36 @@ export function awardNpcDefeat(progress: PlayerProgress, npc: EntitySnapshot): P
     xpGained,
     goldGained,
   };
+}
+
+export function getNpcDefinitionForEntity(npc: EntitySnapshot): NpcDefinition | undefined {
+  if (npc.kind !== "npc" || !npc.npcDefinitionId) {
+    return undefined;
+  }
+
+  return starterNpcDefinitions[npc.npcDefinitionId];
+}
+
+export function getNpcLoot(npc: EntitySnapshot): ItemStack[] {
+  return getNpcDefinitionForEntity(npc)?.loot.map((item) => ({ ...item })) ?? [];
+}
+
+export function getNpcAttackDamage(npc: EntitySnapshot): number {
+  return getNpcDefinitionForEntity(npc)?.attackDamage ?? 0;
+}
+
+export function getNpcRespawnMs(npc: EntitySnapshot): number {
+  return getNpcDefinitionForEntity(npc)?.respawnMs ?? 0;
+}
+
+function getNpcDefinitionById(npcDefinitionId: string): NpcDefinition {
+  const definition = starterNpcDefinitions[npcDefinitionId];
+
+  if (!definition) {
+    throw new Error(`NPC definition ${npcDefinitionId} nao encontrada.`);
+  }
+
+  return definition;
 }
 
 export function createInitialQuests(): QuestState[] {
@@ -730,7 +815,7 @@ export function applySpellCastIntent(attacker: EntitySnapshot, spellId: string, 
       return undefined;
     }
 
-    const target = targets.find((candidate) => candidate.hp > 0 && candidate.x === x && candidate.y === y);
+    const target = targets.find((candidate) => candidate.hp > 0 && isHostileTarget(candidate) && candidate.x === x && candidate.y === y);
 
     if (target) {
       const nextTarget = {
@@ -896,4 +981,8 @@ export function getStatsAttackBonus(stats: PlayerStats): number {
 
 export function getStatsSpellDamageBonus(stats: PlayerStats): number {
   return stats.intelligence * 2;
+}
+
+function isHostileTarget(entity: EntitySnapshot): boolean {
+  return entity.kind !== "npc" || entity.disposition === "hostile";
 }

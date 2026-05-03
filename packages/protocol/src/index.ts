@@ -8,6 +8,10 @@ export const EntityKindSchema = z.enum(["player", "npc"]);
 
 export type EntityKind = z.infer<typeof EntityKindSchema>;
 
+export const NpcDispositionSchema = z.enum(["hostile", "friendly"]);
+
+export type NpcDisposition = z.infer<typeof NpcDispositionSchema>;
+
 export const ItemStackSchema = z.object({
   itemId: z.string(),
   name: z.string(),
@@ -237,6 +241,8 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export const EntitySnapshotSchema = z.object({
   id: z.string(),
   kind: EntityKindSchema,
+  npcDefinitionId: z.string().nullable(),
+  disposition: NpcDispositionSchema.nullable(),
   name: z.string(),
   x: z.number().int(),
   y: z.number().int(),

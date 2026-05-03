@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
@@ -52,9 +52,10 @@ await characterRepository.initialize();
 
 const sessions = new Map<string, Session>();
 const npcs = new Map<string, EntitySnapshot>([
-  ["npc-slime-1", createNpc("npc-slime-1", "Slime", 8, 4)],
-  ["npc-slime-2", createNpc("npc-slime-2", "Slime", 14, 9)],
-  ["npc-guard-1", createNpc("npc-guard-1", "Guardiao", 18, 6)],
+  ["npc-slime-1", createNpc("npc-slime-1", "slime", 8, 4)],
+  ["npc-slime-2", createNpc("npc-slime-2", "slime", 14, 9)],
+  ["npc-guard-1", createNpc("npc-guard-1", "guard", 18, 6)],
+  ["npc-guide-1", createNpc("npc-guide-1", "guide", 6, 5)],
 ]);
 const mapItems = new Map<string, MapItemSnapshot>();
 const resources = new Map<string, ResourceSnapshot>([
@@ -316,7 +317,12 @@ function handleAttack(session: Session, sequence: number): void {
 }
 
 function applyNpcCounterAttack(session: Session, npc: EntitySnapshot): void {
-  const damage = npc.name === "Guardiao" ? 8 : 4;
+  const damage = getNpcAttackDamage(npc);
+
+  if (damage <= 0) {
+    return;
+  }
+
   session.player = {
     ...session.player,
     hp: Math.max(0, session.player.hp - damage),
@@ -339,11 +345,17 @@ function applyNpcCounterAttack(session: Session, npc: EntitySnapshot): void {
 }
 
 function scheduleNpcRespawn(npc: EntitySnapshot): void {
+  const respawnMs = getNpcRespawnMs(npc);
+
+  if (respawnMs <= 0) {
+    return;
+  }
+
   setTimeout(() => {
     npcs.set(npc.id, { ...npc, hp: npc.maxHp });
     broadcastChat("Sistema", `${npc.name} reapareceu.`);
     broadcastEntities();
-  }, 5000);
+  }, respawnMs);
 }
 
 function getEntities(): EntitySnapshot[] {
@@ -419,18 +431,17 @@ async function handlePickup(session: Session, itemInstanceId: string, sequence: 
 }
 
 function createDrop(npc: EntitySnapshot): void {
-  const drop: MapItemSnapshot = {
-    id: randomUUID(),
-    item: {
-      itemId: npc.name === "Guardiao" ? "iron-token" : "slime-gel",
-      name: npc.name === "Guardiao" ? "Ficha de Ferro" : "Gel de Slime",
-      quantity: npc.name === "Guardiao" ? 2 : 1,
-    },
-    x: npc.x,
-    y: npc.y,
-  };
+  for (const item of getNpcLoot(npc)) {
+    const drop: MapItemSnapshot = {
+      id: randomUUID(),
+      item,
+      x: npc.x,
+      y: npc.y,
+    };
 
-  mapItems.set(drop.id, drop);
+    mapItems.set(drop.id, drop);
+  }
+
   broadcastMapItems();
 }
 

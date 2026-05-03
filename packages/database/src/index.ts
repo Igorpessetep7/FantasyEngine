@@ -199,6 +199,8 @@ function rowToState(row: StoredCharacterRow, runtimeEntityId: string, runtimeNam
     player: {
       id: runtimeEntityId,
       kind: "player",
+      npcDefinitionId: null,
+      disposition: null,
       name: runtimeName || row.name,
       x: row.x,
       y: row.y,
@@ -223,7 +225,7 @@ function rowToState(row: StoredCharacterRow, runtimeEntityId: string, runtimeNam
 
 function cloneState(state: CharacterState): CharacterState {
   return {
-    player: { ...state.player },
+    player: { ...state.player, npcDefinitionId: state.player.npcDefinitionId ?? null, disposition: state.player.disposition ?? null },
     inventory: state.inventory.map((item) => ({ ...item })),
     bank: state.bank.map((item) => ({ ...item })),
     equipment: normalizeEquipment(state.equipment),

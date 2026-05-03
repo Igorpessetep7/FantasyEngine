@@ -53,7 +53,7 @@ cp .env.example .env
 ## Sistemas implementados no prototipo
 
 - Movimento autoritativo.
-- NPCs com vida e respawn.
+- NPCs com definicoes autoritativas de hostilidade, vida, dano, loot, recompensa e respawn.
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
 - Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.

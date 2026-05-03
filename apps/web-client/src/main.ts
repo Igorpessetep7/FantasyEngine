@@ -267,11 +267,12 @@ function drawEntities(): void {
     const graphic = new Graphics();
     const isSelf = entity.id === selfId;
     const isNpc = entity.kind === "npc";
+    const isFriendlyNpc = isNpc && entity.disposition === "friendly";
     const x = entity.x * mapSnapshot.tileSize;
     const y = entity.y * mapSnapshot.tileSize;
 
     graphic.roundRect(x + 5, y + 5, mapSnapshot.tileSize - 10, mapSnapshot.tileSize - 10, 5);
-    graphic.fill(isNpc ? 0xd86958 : isSelf ? 0x65d98b : 0x6aa2ff);
+    graphic.fill(isFriendlyNpc ? 0x9fd8d5 : isNpc ? 0xd86958 : isSelf ? 0x65d98b : 0x6aa2ff);
     graphic.stroke({ color: 0x0b100d, width: 2 });
 
     const hpBack = new Graphics();
