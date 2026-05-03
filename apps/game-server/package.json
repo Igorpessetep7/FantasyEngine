@@ -1,0 +1,24 @@
+{
+  "name": "@fantasy-engine/game-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fantasy-engine/database": "0.1.0",
+    "@fantasy-engine/game-rules": "0.1.0",
+    "@fantasy-engine/map-format": "0.1.0",
+    "@fantasy-engine/protocol": "0.1.0",
+    "ws": "^8.18.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

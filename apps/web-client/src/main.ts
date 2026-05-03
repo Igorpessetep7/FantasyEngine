@@ -1,0 +1,427 @@
+import "./style.css";
+import { Application, Container, Graphics, Text } from "pixi.js";
+import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type ShopOffer } from "@fantasy-engine/protocol";
+
+const gameElement = getElement("game");
+const statusElement = getElement("status");
+const chatLogElement = getElement("chat-log");
+const inventoryListElement = getElement("inventory-list");
+const shopListElement = getElement("shop-list");
+const levelLabelElement = getElement("level-label");
+const goldLabelElement = getElement("gold-label");
+const xpLabelElement = getElement("xp-label");
+const xpFillElement = getElement("xp-fill");
+const chatFormElement = getElement("chat-form") as HTMLFormElement;
+const chatInputElement = getElement("chat-input") as HTMLInputElement;
+
+let socket: WebSocket | undefined;
+let sequence = 0;
+let selfId = "";
+let mapSnapshot: MapSnapshot | undefined;
+const entitySnapshots = new Map<string, EntitySnapshot>();
+const mapItemSnapshots = new Map<string, MapItemSnapshot>();
+let inventory: ItemStack[] = [];
+let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
+let shopOffers: ShopOffer[] = [];
+
+const app = new Application();
+const world = new Container();
+const tileLayer = new Container();
+const mapItemLayer = new Container();
+const entityLayer = new Container();
+
+await app.init({
+  width: 960,
+  height: 640,
+  background: "#0f1712",
+  antialias: false,
+  resizeTo: gameElement,
+});
+
+gameElement.appendChild(app.canvas);
+world.addChild(tileLayer, mapItemLayer, entityLayer);
+app.stage.addChild(world);
+
+connect();
+bindInput();
+
+function connect(): void {
+  socket = new WebSocket(import.meta.env.VITE_GAME_SERVER_URL ?? "ws://localhost:8787");
+
+  socket.addEventListener("open", () => {
+    statusElement.textContent = "Online";
+    send({ type: "client.hello", clientId: getClientId(), name: getHeroName() });
+  });
+
+  socket.addEventListener("close", () => {
+    statusElement.textContent = "Reconectando...";
+    setTimeout(connect, 1200);
+  });
+
+  socket.addEventListener("message", (event) => {
+    const message = decodeServerMessage(event.data);
+
+    switch (message.type) {
+      case "world.init":
+        selfId = message.selfId;
+        mapSnapshot = message.map;
+        setEntities(message.entities);
+        setMapItems(message.mapItems);
+        inventory = message.inventory;
+        progress = message.progress;
+        shopOffers = message.shopOffers;
+        drawMap(message.map);
+        drawMapItems();
+        drawEntities();
+        drawInventory();
+        drawProgress();
+        drawShop();
+        return;
+      case "world.entities":
+        setEntities(message.entities);
+        drawEntities();
+        return;
+      case "world.mapItems":
+        setMapItems(message.mapItems);
+        drawMapItems();
+        return;
+      case "inventory.update":
+        inventory = message.inventory;
+        drawInventory();
+        return;
+      case "player.progress":
+        progress = message.progress;
+        drawProgress();
+        drawShop();
+        return;
+      case "shop.offers":
+        shopOffers = message.shopOffers;
+        drawShop();
+        return;
+      case "chat.message":
+        appendChat(message.from, message.text);
+        return;
+      case "server.error":
+        appendChat("Servidor", message.message);
+        return;
+    }
+  });
+}
+
+function bindInput(): void {
+  window.addEventListener("keydown", (event) => {
+    if (document.activeElement === chatInputElement) {
+      return;
+    }
+
+    const direction = keyToDirection(event.key);
+
+    if (!direction) {
+      if (event.code === "Space") {
+        event.preventDefault();
+        sequence += 1;
+        send({ type: "input.attack", sequence });
+      }
+
+      if (event.key === "e" || event.key === "E") {
+        event.preventDefault();
+        pickupNearestItem();
+      }
+
+      return;
+    }
+
+    event.preventDefault();
+    sequence += 1;
+    send({ type: "input.move", direction, sequence });
+  });
+
+  chatFormElement.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = chatInputElement.value.trim();
+
+    if (text.length === 0) {
+      return;
+    }
+
+    send({ type: "chat.send", text });
+    chatInputElement.value = "";
+  });
+}
+
+function drawMap(map: MapSnapshot): void {
+  tileLayer.removeChildren();
+
+  for (const layer of map.layers) {
+    for (let index = 0; index < layer.tiles.length; index += 1) {
+      const tile = layer.tiles[index] ?? 0;
+
+      if (tile === 0 && layer.id !== "ground") {
+        continue;
+      }
+
+      const x = index % map.width;
+      const y = Math.floor(index / map.width);
+      const graphic = new Graphics();
+      graphic.rect(x * map.tileSize, y * map.tileSize, map.tileSize, map.tileSize);
+      graphic.fill(tileColor(tile));
+
+      if (layer.id === "ground") {
+        graphic.stroke({ color: 0x26342d, width: 1, alpha: 0.55 });
+      }
+
+      tileLayer.addChild(graphic);
+    }
+  }
+
+  centerWorld(map);
+}
+
+function drawEntities(): void {
+  if (!mapSnapshot) {
+    return;
+  }
+
+  entityLayer.removeChildren();
+
+  for (const entity of entitySnapshots.values()) {
+    const graphic = new Graphics();
+    const isSelf = entity.id === selfId;
+    const isNpc = entity.kind === "npc";
+    const x = entity.x * mapSnapshot.tileSize;
+    const y = entity.y * mapSnapshot.tileSize;
+
+    graphic.roundRect(x + 5, y + 5, mapSnapshot.tileSize - 10, mapSnapshot.tileSize - 10, 5);
+    graphic.fill(isNpc ? 0xd86958 : isSelf ? 0x65d98b : 0x6aa2ff);
+    graphic.stroke({ color: 0x0b100d, width: 2 });
+
+    const hpBack = new Graphics();
+    hpBack.rect(x + 4, y + mapSnapshot.tileSize - 5, mapSnapshot.tileSize - 8, 3);
+    hpBack.fill(0x1b241f);
+
+    const hpFill = new Graphics();
+    hpFill.rect(x + 4, y + mapSnapshot.tileSize - 5, (mapSnapshot.tileSize - 8) * (entity.hp / entity.maxHp), 3);
+    hpFill.fill(entity.hp > entity.maxHp * 0.35 ? 0x7ee08f : 0xf1ba55);
+
+    const label = new Text({
+      text: entity.name,
+      style: {
+        fill: "#effff5",
+        fontSize: 11,
+        stroke: { color: "#101612", width: 3 },
+      },
+    });
+    label.anchor.set(0.5, 1);
+    label.position.set(x + mapSnapshot.tileSize / 2, y + 2);
+
+    entityLayer.addChild(graphic, hpBack, hpFill, label);
+  }
+}
+
+function centerWorld(map: MapSnapshot): void {
+  const mapWidth = map.width * map.tileSize;
+  const mapHeight = map.height * map.tileSize;
+  world.position.set(Math.max(16, (app.screen.width - mapWidth) / 2), Math.max(16, (app.screen.height - mapHeight) / 2));
+}
+
+function setEntities(entities: EntitySnapshot[]): void {
+  entitySnapshots.clear();
+
+  for (const entity of entities) {
+    entitySnapshots.set(entity.id, entity);
+  }
+}
+
+function appendChat(from: string, text: string): void {
+  const line = document.createElement("div");
+  line.textContent = `${from}: ${text}`;
+  chatLogElement.appendChild(line);
+  chatLogElement.scrollTop = chatLogElement.scrollHeight;
+}
+
+function send(message: object): void {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(message));
+  }
+}
+
+function keyToDirection(key: string): "up" | "down" | "left" | "right" | undefined {
+  switch (key) {
+    case "ArrowUp":
+    case "w":
+    case "W":
+      return "up";
+    case "ArrowDown":
+    case "s":
+    case "S":
+      return "down";
+    case "ArrowLeft":
+    case "a":
+    case "A":
+      return "left";
+    case "ArrowRight":
+    case "d":
+    case "D":
+      return "right";
+    default:
+      return undefined;
+  }
+}
+
+function tileColor(tile: number): number {
+  switch (tile) {
+    case 1:
+      return 0x295f45;
+    case 2:
+      return 0x4f574d;
+    case 3:
+      return 0x7a6240;
+    default:
+      return 0x2f7d4d;
+  }
+}
+
+function getElement(id: string): HTMLElement {
+  const element = document.getElementById(id);
+
+  if (!element) {
+    throw new Error(`Elemento #${id} nao encontrado.`);
+  }
+
+  return element;
+}
+
+function drawMapItems(): void {
+  if (!mapSnapshot) {
+    return;
+  }
+
+  mapItemLayer.removeChildren();
+
+  for (const mapItem of mapItemSnapshots.values()) {
+    const x = mapItem.x * mapSnapshot.tileSize;
+    const y = mapItem.y * mapSnapshot.tileSize;
+    const graphic = new Graphics();
+    graphic.roundRect(x + 9, y + 10, mapSnapshot.tileSize - 18, mapSnapshot.tileSize - 18, 4);
+    graphic.fill(0xf0c35b);
+    graphic.stroke({ color: 0x2d2410, width: 2 });
+    mapItemLayer.addChild(graphic);
+  }
+}
+
+function setMapItems(mapItems: MapItemSnapshot[]): void {
+  mapItemSnapshots.clear();
+
+  for (const mapItem of mapItems) {
+    mapItemSnapshots.set(mapItem.id, mapItem);
+  }
+}
+
+function pickupNearestItem(): void {
+  const self = entitySnapshots.get(selfId);
+
+  if (!self) {
+    return;
+  }
+
+  const nearest = [...mapItemSnapshots.values()].find((mapItem) => Math.abs(self.x - mapItem.x) + Math.abs(self.y - mapItem.y) <= 1);
+
+  if (!nearest) {
+    appendChat("Sistema", "Nenhum item ao alcance.");
+    return;
+  }
+
+  sequence += 1;
+  send({ type: "input.pickup", itemInstanceId: nearest.id, sequence });
+}
+
+function drawInventory(): void {
+  inventoryListElement.replaceChildren();
+
+  if (inventory.length === 0) {
+    const empty = document.createElement("span");
+    empty.textContent = "Vazio";
+    inventoryListElement.appendChild(empty);
+    return;
+  }
+
+  for (const item of inventory) {
+    const row = document.createElement("div");
+    row.className = "inventory-item";
+
+    const label = document.createElement("span");
+    label.textContent = `${item.quantity}x ${item.name}`;
+
+    if (item.itemId === "small-potion") {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Usar";
+      button.addEventListener("click", () => {
+        sequence += 1;
+        send({ type: "input.useItem", itemId: item.itemId, sequence });
+      });
+      row.append(label, button);
+    } else {
+      row.append(label);
+    }
+
+    inventoryListElement.appendChild(row);
+  }
+}
+
+function drawProgress(): void {
+  levelLabelElement.textContent = `Level ${progress.level}`;
+  goldLabelElement.textContent = `${progress.gold} gold`;
+  xpLabelElement.textContent = `${progress.xp} / ${progress.xpToNext} XP`;
+  xpFillElement.style.width = `${Math.min(100, (progress.xp / progress.xpToNext) * 100)}%`;
+}
+
+function drawShop(): void {
+  shopListElement.replaceChildren();
+
+  for (const offer of shopOffers) {
+    const row = document.createElement("div");
+    row.className = "shop-offer";
+
+    const label = document.createElement("span");
+    label.textContent = `${offer.item.name} - ${offer.priceGold} gold`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Comprar";
+    button.disabled = progress.gold < offer.priceGold;
+    button.addEventListener("click", () => {
+      sequence += 1;
+      send({ type: "input.shopBuy", itemId: offer.item.itemId, sequence });
+    });
+
+    row.append(label, button);
+    shopListElement.appendChild(row);
+  }
+}
+
+function getClientId(): string {
+  const storageKey = "fantasy-engine.client-id";
+  const existing = localStorage.getItem(storageKey);
+
+  if (existing) {
+    return existing;
+  }
+
+  const created = crypto.randomUUID();
+  localStorage.setItem(storageKey, created);
+  return created;
+}
+
+function getHeroName(): string {
+  const storageKey = "fantasy-engine.hero-name";
+  const existing = localStorage.getItem(storageKey);
+
+  if (existing) {
+    return existing;
+  }
+
+  const created = `Hero-${Math.floor(Math.random() * 9999)}`;
+  localStorage.setItem(storageKey, created);
+  return created;
+}

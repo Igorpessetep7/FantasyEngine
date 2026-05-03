@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fantasy Engine</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="game"></div>
+      <aside id="hud">
+        <header>
+          <strong>Fantasy Engine</strong>
+          <span id="status">Conectando...</span>
+        </header>
+        <section id="inventory-panel">
+          <div id="progress-panel">
+            <span id="level-label">Level 1</span>
+            <span id="gold-label">0 gold</span>
+            <div id="xp-bar"><div id="xp-fill"></div></div>
+            <span id="xp-label">0 / 50 XP</span>
+          </div>
+          <strong>Shop</strong>
+          <div id="shop-list"></div>
+          <strong>Inventario</strong>
+          <div id="inventory-list"></div>
+        </section>
+        <div id="chat-log"></div>
+        <form id="chat-form">
+          <input id="chat-input" maxlength="180" autocomplete="off" placeholder="Mensagem" />
+          <button type="submit">Enviar</button>
+        </form>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

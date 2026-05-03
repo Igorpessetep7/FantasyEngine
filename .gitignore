@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+
+# Referencia upstream local. Nao commitar o codigo completo do Intersect aqui.
+vendor/Intersect-Engine/

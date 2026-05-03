@@ -1,0 +1,20 @@
+{
+  "name": "@fantasy-engine/web-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fantasy-engine/protocol": "0.1.0",
+    "pixi.js": "^8.14.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2"
+  },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  }
+}
