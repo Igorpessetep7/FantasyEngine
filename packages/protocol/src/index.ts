@@ -310,6 +310,11 @@ export const TileAttributeSchema = z.discriminatedUnion("kind", [
       direction: DirectionSchema,
     }),
   }),
+  z.object({
+    kind: z.literal("damage"),
+    label: z.string().min(1).max(80),
+    damage: z.number().int().positive().max(9999),
+  }),
 ]);
 
 export type TileAttribute = z.infer<typeof TileAttributeSchema>;

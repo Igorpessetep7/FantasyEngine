@@ -12,6 +12,10 @@ const ground = Array.from({ length: size }, (_, index) => {
     return 4;
   }
 
+  if (x === 3 && y === 4) {
+    return 5;
+  }
+
   if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
     return 2;
   }
@@ -46,6 +50,14 @@ const attributes: TileAttribute[] = Array.from({ length: size }, (_, index) => {
       kind: "warp",
       label: "Retorno ao Guia",
       target: { x: 6, y: 5, direction: "left" },
+    };
+  }
+
+  if (x === 3 && y === 4) {
+    return {
+      kind: "damage",
+      label: "Espinhos de Treino",
+      damage: 12,
     };
   }
 

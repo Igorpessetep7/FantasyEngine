@@ -61,6 +61,7 @@ cp .env.example .env
 - Condicoes de evento por variavel com recompensa de XP/gold/item aplicada pelo servidor.
 - Teleport por evento com destino validado contra colisao no servidor.
 - Atributos de tile com warp aplicado apos movimento validado pelo servidor.
+- Atributos de tile com dano aplicado ao personagem apenas pelo servidor.
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
 - Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.

@@ -21,8 +21,9 @@ export interface TeleportResult {
 export interface TileAttributeResult {
   triggered: boolean;
   entity: EntitySnapshot;
-  attributeKind?: "warp";
+  attributeKind?: "warp" | "damage";
   label?: string;
+  damage?: number;
   error?: "blocked_destination";
 }
 
@@ -190,10 +191,23 @@ export function applyTeleportIntent(entity: EntitySnapshot, map: MapSnapshot, de
 export function applyTileAttributeEffect(entity: EntitySnapshot, map: MapSnapshot): TileAttributeResult {
   const attribute = getTileAttribute(map, entity.x, entity.y);
 
-  if (attribute.kind !== "warp") {
+  if (attribute.kind === "none") {
     return {
       triggered: false,
       entity,
+    };
+  }
+
+  if (attribute.kind === "damage") {
+    return {
+      triggered: true,
+      entity: {
+        ...entity,
+        hp: Math.max(0, entity.hp - attribute.damage),
+      },
+      attributeKind: "damage",
+      label: attribute.label,
+      damage: attribute.damage,
     };
   }
 

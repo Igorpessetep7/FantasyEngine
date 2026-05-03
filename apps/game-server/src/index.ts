@@ -293,8 +293,9 @@ async function handleMove(session: Session, direction: EntitySnapshot["direction
 
   session.lastSequence = sequence;
   session.lastMoveAt = now;
-  session.player = applyMoveIntent(session.player, direction, starterMap).entity;
-  const attribute = applyTileAttributeEffect(session.player, starterMap);
+  const move = applyMoveIntent(session.player, direction, starterMap);
+  session.player = move.entity;
+  const attribute = move.moved ? applyTileAttributeEffect(session.player, starterMap) : { triggered: false, entity: session.player };
 
   if (attribute.error) {
     send(session, {
@@ -307,6 +308,21 @@ async function handleMove(session: Session, direction: EntitySnapshot["direction
 
     if (attribute.triggered && attribute.attributeKind === "warp") {
       broadcastChat("Mapa", `${session.player.name} atravessou ${attribute.label ?? "um warp"}.`);
+    }
+
+    if (attribute.triggered && attribute.attributeKind === "damage") {
+      broadcastChat("Mapa", `${session.player.name} sofreu ${attribute.damage ?? 0} de dano em ${attribute.label ?? "um tile perigoso"}.`);
+
+      if (session.player.hp === 0) {
+        session.player = {
+          ...session.player,
+          hp: session.player.maxHp,
+          x: 4,
+          y: 4,
+          direction: "down",
+        };
+        broadcastChat("Sistema", `${session.player.name} retornou ao ponto inicial.`);
+      }
     }
   }
 
