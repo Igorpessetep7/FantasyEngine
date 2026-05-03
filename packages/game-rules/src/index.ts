@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ShopOffer } from "@fantasy-engine/protocol";
+import type { Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -333,4 +333,59 @@ export function applyItemUseIntent(entity: EntitySnapshot, itemId: string): Item
     consumed: true,
     message: `curou ${healed} HP`,
   };
+}
+
+export interface SpellCastResult {
+  spell: SpellDefinition;
+  target: EntitySnapshot;
+  damage: number;
+  defeated: boolean;
+}
+
+export const starterSpells: SpellDefinition[] = [
+  {
+    spellId: "fire-bolt",
+    name: "Fire Bolt",
+    description: "Dispara uma chama em linha reta.",
+    range: 5,
+    damage: 16,
+    cooldownMs: 1200,
+  },
+];
+
+export function applySpellCastIntent(attacker: EntitySnapshot, spellId: string, targets: EntitySnapshot[], map: MapSnapshot): SpellCastResult | undefined {
+  const spell = starterSpells.find((candidate) => candidate.spellId === spellId);
+
+  if (!spell) {
+    return undefined;
+  }
+
+  const delta = directionToDelta(attacker.direction);
+
+  for (let distance = 1; distance <= spell.range; distance += 1) {
+    const x = attacker.x + delta.x * distance;
+    const y = attacker.y + delta.y * distance;
+
+    if (isBlocked(map, x, y)) {
+      return undefined;
+    }
+
+    const target = targets.find((candidate) => candidate.hp > 0 && candidate.x === x && candidate.y === y);
+
+    if (target) {
+      const nextTarget = {
+        ...target,
+        hp: Math.max(0, target.hp - spell.damage),
+      };
+
+      return {
+        spell,
+        target: nextTarget,
+        damage: spell.damage,
+        defeated: nextTarget.hp === 0,
+      };
+    }
+  }
+
+  return undefined;
 }

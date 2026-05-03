@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ShopOffer } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -8,6 +8,7 @@ const chatLogElement = getElement("chat-log");
 const inventoryListElement = getElement("inventory-list");
 const shopListElement = getElement("shop-list");
 const questListElement = getElement("quest-list");
+const spellListElement = getElement("spell-list");
 const levelLabelElement = getElement("level-label");
 const goldLabelElement = getElement("gold-label");
 const xpLabelElement = getElement("xp-label");
@@ -25,6 +26,7 @@ let inventory: ItemStack[] = [];
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let shopOffers: ShopOffer[] = [];
 let quests: QuestState[] = [];
+let spells: SpellDefinition[] = [];
 
 const app = new Application();
 const world = new Container();
@@ -73,6 +75,7 @@ function connect(): void {
         progress = message.progress;
         shopOffers = message.shopOffers;
         quests = message.quests;
+        spells = message.spells;
         drawMap(message.map);
         drawMapItems();
         drawEntities();
@@ -80,6 +83,7 @@ function connect(): void {
         drawProgress();
         drawShop();
         drawQuests();
+        drawSpells();
         return;
       case "world.entities":
         setEntities(message.entities);
@@ -105,6 +109,10 @@ function connect(): void {
       case "quest.update":
         quests = message.quests;
         drawQuests();
+        return;
+      case "spell.list":
+        spells = message.spells;
+        drawSpells();
         return;
       case "chat.message":
         appendChat(message.from, message.text);
@@ -134,6 +142,11 @@ function bindInput(): void {
       if (event.key === "e" || event.key === "E") {
         event.preventDefault();
         pickupNearestItem();
+      }
+
+      if (event.key === "1" && spells[0]) {
+        event.preventDefault();
+        castSpell(spells[0].spellId);
       }
 
       return;
@@ -434,6 +447,32 @@ function drawQuests(): void {
     entry.append(title, progressLine, reward);
     questListElement.appendChild(entry);
   }
+}
+
+function drawSpells(): void {
+  spellListElement.replaceChildren();
+
+  for (const spell of spells) {
+    const row = document.createElement("div");
+    row.className = "spell-entry";
+
+    const label = document.createElement("span");
+    label.textContent = `${spell.name} - ${spell.damage} dano`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Cast";
+    button.title = spell.description;
+    button.addEventListener("click", () => castSpell(spell.spellId));
+
+    row.append(label, button);
+    spellListElement.appendChild(row);
+  }
+}
+
+function castSpell(spellId: string): void {
+  sequence += 1;
+  send({ type: "input.castSpell", spellId, sequence });
 }
 
 function getClientId(): string {

@@ -124,7 +124,8 @@ canvas {
 
 #inventory-list,
 #shop-list,
-#quest-list {
+#quest-list,
+#spell-list {
   display: grid;
   gap: 6px;
   color: #aabbb1;
@@ -212,5 +213,21 @@ canvas {
   padding: 6px 8px;
   color: #0c120f;
   background: #77d69a;
+  cursor: pointer;
+}
+
+.spell-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.spell-entry button {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #0c120f;
+  background: #ff9966;
   cursor: pointer;
 }

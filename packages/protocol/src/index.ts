@@ -61,6 +61,17 @@ export const QuestStateSchema = z.object({
 
 export type QuestState = z.infer<typeof QuestStateSchema>;
 
+export const SpellDefinitionSchema = z.object({
+  spellId: z.string(),
+  name: z.string(),
+  description: z.string(),
+  range: z.number().int().positive(),
+  damage: z.number().int().positive(),
+  cooldownMs: z.number().int().positive(),
+});
+
+export type SpellDefinition = z.infer<typeof SpellDefinitionSchema>;
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("client.hello"),
@@ -89,6 +100,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("input.useItem"),
     itemId: z.string().min(1).max(80),
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
+    type: z.literal("input.castSpell"),
+    spellId: z.string().min(1).max(80),
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
@@ -143,6 +159,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     progress: PlayerProgressSchema,
     shopOffers: z.array(ShopOfferSchema),
     quests: z.array(QuestStateSchema),
+    spells: z.array(SpellDefinitionSchema),
   }),
   z.object({
     type: z.literal("world.entities"),
@@ -167,6 +184,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("quest.update"),
     quests: z.array(QuestStateSchema),
+  }),
+  z.object({
+    type: z.literal("spell.list"),
+    spells: z.array(SpellDefinitionSchema),
   }),
   z.object({
     type: z.literal("chat.message"),

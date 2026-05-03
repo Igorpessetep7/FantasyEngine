@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, starterShopOffers } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ServerMessage } from "@fantasy-engine/protocol";
 
@@ -27,6 +27,7 @@ interface Session {
   lastPickupAt: number;
   lastShopAt: number;
   lastUseItemAt: number;
+  lastSpellAt: Record<string, number>;
   lastSequence: number;
 }
 
@@ -62,6 +63,7 @@ webSocketServer.on("connection", (socket) => {
     progress: session.progress,
     shopOffers: starterShopOffers,
     quests: session.quests,
+    spells: starterSpells,
   });
 
   socket.on("message", (payload) => {
@@ -99,6 +101,7 @@ function createSession(socket: WebSocket): Session {
     lastPickupAt: 0,
     lastShopAt: 0,
     lastUseItemAt: 0,
+    lastSpellAt: {},
     lastSequence: 0,
   };
 }
@@ -126,6 +129,9 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
         return;
       case "input.useItem":
         await handleUseItem(session, message.itemId, message.sequence);
+        return;
+      case "input.castSpell":
+        handleCastSpell(session, message.spellId, message.sequence);
         return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
@@ -165,6 +171,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     progress: session.progress,
     shopOffers: starterShopOffers,
     quests: session.quests,
+    spells: starterSpells,
   });
   broadcastChat("Sistema", `${session.player.name} entrou no mundo.`);
 }
@@ -225,21 +232,7 @@ function handleAttack(session: Session, sequence: number): void {
   }
 
   if (result.defeated) {
-    broadcastChat("Combate", `${result.target.name} foi derrotado.`);
-    const award = awardNpcDefeat(session.progress, result.target);
-    session.progress = award.progress;
-    sendProgress(session);
-    void saveSession(session);
-    broadcastChat("Progresso", `${session.player.name} ganhou ${award.xpGained} XP e ${award.goldGained} gold.`);
-
-    if (award.leveledUp) {
-      broadcastChat("Progresso", `${session.player.name} avancou para o level ${session.progress.level}.`);
-    }
-
-    updateQuestProgressForNpcDefeat(session, result.target);
-
-    createDrop(result.target);
-    scheduleNpcRespawn(result.target);
+    handleNpcDefeat(session, result.target);
   }
 
   broadcastEntities();
@@ -562,4 +555,72 @@ function itemUseErrorMessage(error: string | undefined): string {
     default:
       return "Item indisponivel.";
   }
+}
+
+function handleCastSpell(session: Session, spellId: string, sequence: number): void {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  const spell = starterSpells.find((candidate) => candidate.spellId === spellId);
+
+  if (!spell) {
+    send(session, {
+      type: "server.error",
+      code: "unknown_spell",
+      message: "Spell indisponivel.",
+    });
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - (session.lastSpellAt[spellId] ?? 0) < spell.cooldownMs) {
+    send(session, {
+      type: "server.error",
+      code: "spell_cooldown",
+      message: "Spell em cooldown.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastSpellAt[spellId] = now;
+
+  const result = applySpellCastIntent(session.player, spellId, [...npcs.values()], starterMap);
+
+  if (!result) {
+    send(session, {
+      type: "server.error",
+      code: "spell_no_target",
+      message: "Nenhum alvo valido na linha da spell.",
+    });
+    return;
+  }
+
+  npcs.set(result.target.id, result.target);
+  broadcastChat("Spell", `${session.player.name} conjurou ${result.spell.name} causando ${result.damage} de dano em ${result.target.name}.`);
+
+  if (result.defeated) {
+    handleNpcDefeat(session, result.target);
+  }
+
+  broadcastEntities();
+}
+
+function handleNpcDefeat(session: Session, npc: EntitySnapshot): void {
+  broadcastChat("Combate", `${npc.name} foi derrotado.`);
+  const award = awardNpcDefeat(session.progress, npc);
+  session.progress = award.progress;
+  sendProgress(session);
+  void saveSession(session);
+  broadcastChat("Progresso", `${session.player.name} ganhou ${award.xpGained} XP e ${award.goldGained} gold.`);
+
+  if (award.leveledUp) {
+    broadcastChat("Progresso", `${session.player.name} avancou para o level ${session.progress.level}.`);
+  }
+
+  updateQuestProgressForNpcDefeat(session, npc);
+  createDrop(npc);
+  scheduleNpcRespawn(npc);
 }

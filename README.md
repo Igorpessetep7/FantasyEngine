@@ -47,6 +47,7 @@ cp .env.example .env
 - `WASD` ou setas: movimento validado pelo servidor.
 - `Espaco`: ataque na entidade que estiver na direcao do personagem.
 - `E`: pegar item proximo validado pelo servidor.
+- `1`: conjurar a primeira spell equipada.
 
 ## Sistemas implementados no prototipo
 
@@ -60,6 +61,7 @@ cp .env.example .env
 - Uso de pocao com cura e consumo validados pelo servidor.
 - Contra-ataque basico de NPCs e retorno ao ponto inicial ao cair.
 - Quests autoritativas com progresso por NPC derrotado e recompensa persistente.
+- Spells autoritativas com alcance, dano e cooldown validados no servidor.
 
 ## Regra de ouro
 
