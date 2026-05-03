@@ -1,10 +1,11 @@
 import { Pool } from "pg";
-import type { EntitySnapshot, ItemStack, PlayerProgress } from "@fantasy-engine/protocol";
+import type { EntitySnapshot, ItemStack, PlayerProgress, QuestState } from "@fantasy-engine/protocol";
 
 export interface CharacterState {
   player: EntitySnapshot;
   inventory: ItemStack[];
   progress: PlayerProgress;
+  quests: QuestState[];
 }
 
 export interface CharacterRepository {
@@ -44,6 +45,7 @@ class MemoryCharacterRepository implements CharacterRepository {
       player: { ...existing.player, id: defaults.player.id, name: defaults.player.name },
       inventory: existing.inventory,
       progress: existing.progress,
+      quests: existing.quests,
     });
   }
 
@@ -77,6 +79,7 @@ class PostgresCharacterRepository implements CharacterRepository {
           xp INTEGER NOT NULL DEFAULT 0 CHECK (xp >= 0),
           xp_to_next INTEGER NOT NULL DEFAULT 50 CHECK (xp_to_next > 0),
           gold INTEGER NOT NULL DEFAULT 0 CHECK (gold >= 0),
+          quests JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
@@ -86,14 +89,15 @@ class PostgresCharacterRepository implements CharacterRepository {
         ADD COLUMN IF NOT EXISTS level INTEGER NOT NULL DEFAULT 1 CHECK (level > 0),
         ADD COLUMN IF NOT EXISTS xp INTEGER NOT NULL DEFAULT 0 CHECK (xp >= 0),
         ADD COLUMN IF NOT EXISTS xp_to_next INTEGER NOT NULL DEFAULT 50 CHECK (xp_to_next > 0),
-        ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0 CHECK (gold >= 0);
+        ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0 CHECK (gold >= 0),
+        ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '[]'::jsonb;
     `);
     await this.pool.query("CREATE INDEX IF NOT EXISTS idx_player_characters_updated_at ON player_characters (updated_at);");
   }
 
   async loadOrCreate(clientId: string, defaults: CharacterState): Promise<CharacterState> {
     const existing = await this.pool.query<StoredCharacterRow>(
-      "SELECT client_id, name, x, y, direction, hp, max_hp, inventory, level, xp, xp_to_next, gold FROM player_characters WHERE client_id = $1",
+      "SELECT client_id, name, x, y, direction, hp, max_hp, inventory, level, xp, xp_to_next, gold, quests FROM player_characters WHERE client_id = $1",
       [clientId],
     );
 
@@ -108,8 +112,8 @@ class PostgresCharacterRepository implements CharacterRepository {
   async save(clientId: string, state: CharacterState): Promise<void> {
     await this.pool.query(
       `
-        INSERT INTO player_characters (client_id, name, map_id, x, y, direction, hp, max_hp, inventory, level, xp, xp_to_next, gold, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, NOW())
+        INSERT INTO player_characters (client_id, name, map_id, x, y, direction, hp, max_hp, inventory, level, xp, xp_to_next, gold, quests, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14::jsonb, NOW())
         ON CONFLICT (client_id) DO UPDATE SET
           name = EXCLUDED.name,
           map_id = EXCLUDED.map_id,
@@ -123,6 +127,7 @@ class PostgresCharacterRepository implements CharacterRepository {
           xp = EXCLUDED.xp,
           xp_to_next = EXCLUDED.xp_to_next,
           gold = EXCLUDED.gold,
+          quests = EXCLUDED.quests,
           updated_at = NOW()
       `,
       [
@@ -139,6 +144,7 @@ class PostgresCharacterRepository implements CharacterRepository {
         state.progress.xp,
         state.progress.xpToNext,
         state.progress.gold,
+        JSON.stringify(state.quests),
       ],
     );
   }
@@ -157,6 +163,7 @@ interface StoredCharacterRow {
   xp: number;
   xp_to_next: number;
   gold: number;
+  quests: QuestState[];
 }
 
 function rowToState(row: StoredCharacterRow, runtimeEntityId: string, runtimeName: string): CharacterState {
@@ -178,6 +185,7 @@ function rowToState(row: StoredCharacterRow, runtimeEntityId: string, runtimeNam
       xpToNext: row.xp_to_next,
       gold: row.gold,
     },
+    quests: Array.isArray(row.quests) ? row.quests : [],
   };
 }
 
@@ -186,5 +194,10 @@ function cloneState(state: CharacterState): CharacterState {
     player: { ...state.player },
     inventory: state.inventory.map((item) => ({ ...item })),
     progress: { ...state.progress },
+    quests: state.quests.map((quest) => ({
+      ...quest,
+      target: { ...quest.target },
+      reward: { ...quest.reward, items: quest.reward.items.map((item) => ({ ...item })) },
+    })),
   };
 }

@@ -123,11 +123,25 @@ canvas {
 }
 
 #inventory-list,
-#shop-list {
+#shop-list,
+#quest-list {
   display: grid;
   gap: 6px;
   color: #aabbb1;
   font-size: 13px;
+}
+
+.quest-entry {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid #2f3b34;
+  border-radius: 6px;
+  background: #101713;
+}
+
+.quest-entry span:first-child {
+  color: #d8ecdf;
 }
 
 .shop-offer {

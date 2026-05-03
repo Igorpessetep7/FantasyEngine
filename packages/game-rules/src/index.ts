@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, ShopOffer } from "@fantasy-engine/protocol";
+import type { Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ShopOffer } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -153,8 +153,99 @@ export function awardNpcDefeat(progress: PlayerProgress, npc: EntitySnapshot): P
   };
 }
 
+export function createInitialQuests(): QuestState[] {
+  return [
+    {
+      questId: "first-slimes",
+      title: "Limpeza do Campo",
+      description: "Derrote Slimes no campo inicial.",
+      target: {
+        kind: "defeatNpc",
+        npcName: "Slime",
+        required: 3,
+      },
+      progress: 0,
+      status: "active",
+      reward: {
+        xp: 25,
+        gold: 10,
+        items: [{ itemId: "small-potion", name: "Pocao Pequena", quantity: 1 }],
+      },
+    },
+  ];
+}
+
+export function applyQuestNpcDefeat(quests: QuestState[], npc: EntitySnapshot): { quests: QuestState[]; completed: QuestState[] } {
+  const completed: QuestState[] = [];
+  const nextQuests = quests.map((quest) => {
+    if (quest.status !== "active" || quest.target.npcName !== npc.name) {
+      return quest;
+    }
+
+    const progress = Math.min(quest.target.required, quest.progress + 1);
+    const status = progress >= quest.target.required ? "completed" : "active";
+    const nextQuest = { ...quest, progress, status } satisfies QuestState;
+
+    if (status === "completed") {
+      completed.push(nextQuest);
+    }
+
+    return nextQuest;
+  });
+
+  return { quests: nextQuests, completed };
+}
+
+export function claimCompletedQuestRewards(progress: PlayerProgress, inventory: ItemStack[], quests: QuestState[]): { progress: PlayerProgress; inventory: ItemStack[]; quests: QuestState[]; claimed: QuestState[] } {
+  let nextProgress = progress;
+  const nextInventory = inventory.map((item) => ({ ...item }));
+  const claimed: QuestState[] = [];
+  const nextQuests = quests.map((quest) => {
+    if (quest.status !== "completed") {
+      return quest;
+    }
+
+    nextProgress = addRewardProgress(nextProgress, quest.reward.xp, quest.reward.gold);
+
+    for (const rewardItem of quest.reward.items) {
+      const existing = nextInventory.find((item) => item.itemId === rewardItem.itemId);
+
+      if (existing) {
+        existing.quantity += rewardItem.quantity;
+      } else {
+        nextInventory.push({ ...rewardItem });
+      }
+    }
+
+    const claimedQuest = { ...quest, status: "claimed" as const };
+    claimed.push(claimedQuest);
+    return claimedQuest;
+  });
+
+  return { progress: nextProgress, inventory: nextInventory, quests: nextQuests, claimed };
+}
+
 function getXpToNextLevel(level: number): number {
   return 50 + (level - 1) * 30;
+}
+
+function addRewardProgress(progress: PlayerProgress, xpGained: number, goldGained: number): PlayerProgress {
+  let level = progress.level;
+  let xp = progress.xp + xpGained;
+  let xpToNext = getXpToNextLevel(level);
+
+  while (xp >= xpToNext) {
+    xp -= xpToNext;
+    level += 1;
+    xpToNext = getXpToNextLevel(level);
+  }
+
+  return {
+    level,
+    xp,
+    xpToNext,
+    gold: progress.gold + goldGained,
+  };
 }
 
 export interface PurchaseResult {

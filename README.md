@@ -59,6 +59,7 @@ cp .env.example .env
 - Shop com compras validadas pelo servidor.
 - Uso de pocao com cura e consumo validados pelo servidor.
 - Contra-ataque basico de NPCs e retorno ao ponto inicial ao cair.
+- Quests autoritativas com progresso por NPC derrotado e recompensa persistente.
 
 ## Regra de ouro
 

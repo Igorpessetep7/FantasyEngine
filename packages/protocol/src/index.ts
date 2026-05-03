@@ -41,6 +41,26 @@ export const ShopOfferSchema = z.object({
 
 export type ShopOffer = z.infer<typeof ShopOfferSchema>;
 
+export const QuestStateSchema = z.object({
+  questId: z.string(),
+  title: z.string(),
+  description: z.string(),
+  target: z.object({
+    kind: z.literal("defeatNpc"),
+    npcName: z.string(),
+    required: z.number().int().positive(),
+  }),
+  progress: z.number().int().nonnegative(),
+  status: z.enum(["active", "completed", "claimed"]),
+  reward: z.object({
+    xp: z.number().int().nonnegative(),
+    gold: z.number().int().nonnegative(),
+    items: z.array(ItemStackSchema),
+  }),
+});
+
+export type QuestState = z.infer<typeof QuestStateSchema>;
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("client.hello"),
@@ -122,6 +142,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     inventory: z.array(ItemStackSchema),
     progress: PlayerProgressSchema,
     shopOffers: z.array(ShopOfferSchema),
+    quests: z.array(QuestStateSchema),
   }),
   z.object({
     type: z.literal("world.entities"),
@@ -142,6 +163,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("shop.offers"),
     shopOffers: z.array(ShopOfferSchema),
+  }),
+  z.object({
+    type: z.literal("quest.update"),
+    quests: z.array(QuestStateSchema),
   }),
   z.object({
     type: z.literal("chat.message"),

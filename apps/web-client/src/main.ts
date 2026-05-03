@@ -1,12 +1,13 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type ShopOffer } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ShopOffer } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
 const chatLogElement = getElement("chat-log");
 const inventoryListElement = getElement("inventory-list");
 const shopListElement = getElement("shop-list");
+const questListElement = getElement("quest-list");
 const levelLabelElement = getElement("level-label");
 const goldLabelElement = getElement("gold-label");
 const xpLabelElement = getElement("xp-label");
@@ -23,6 +24,7 @@ const mapItemSnapshots = new Map<string, MapItemSnapshot>();
 let inventory: ItemStack[] = [];
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let shopOffers: ShopOffer[] = [];
+let quests: QuestState[] = [];
 
 const app = new Application();
 const world = new Container();
@@ -70,12 +72,14 @@ function connect(): void {
         inventory = message.inventory;
         progress = message.progress;
         shopOffers = message.shopOffers;
+        quests = message.quests;
         drawMap(message.map);
         drawMapItems();
         drawEntities();
         drawInventory();
         drawProgress();
         drawShop();
+        drawQuests();
         return;
       case "world.entities":
         setEntities(message.entities);
@@ -97,6 +101,10 @@ function connect(): void {
       case "shop.offers":
         shopOffers = message.shopOffers;
         drawShop();
+        return;
+      case "quest.update":
+        quests = message.quests;
+        drawQuests();
         return;
       case "chat.message":
         appendChat(message.from, message.text);
@@ -397,6 +405,34 @@ function drawShop(): void {
 
     row.append(label, button);
     shopListElement.appendChild(row);
+  }
+}
+
+function drawQuests(): void {
+  questListElement.replaceChildren();
+
+  if (quests.length === 0) {
+    const empty = document.createElement("span");
+    empty.textContent = "Nenhuma quest";
+    questListElement.appendChild(empty);
+    return;
+  }
+
+  for (const quest of quests) {
+    const entry = document.createElement("div");
+    entry.className = "quest-entry";
+
+    const title = document.createElement("span");
+    title.textContent = quest.title;
+
+    const progressLine = document.createElement("span");
+    progressLine.textContent = `${quest.description} ${quest.progress}/${quest.target.required}`;
+
+    const reward = document.createElement("span");
+    reward.textContent = quest.status === "claimed" ? "Recompensa recebida" : `Recompensa: ${quest.reward.xp} XP, ${quest.reward.gold} gold`;
+
+    entry.append(title, progressLine, reward);
+    questListElement.appendChild(entry);
   }
 }
 

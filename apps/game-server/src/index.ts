@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, awardNpcDefeat, canPickupItem, createInitialProgress, createNpc, createPlayer, starterShopOffers } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, starterShopOffers } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
-import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type ServerMessage } from "@fantasy-engine/protocol";
+import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ServerMessage } from "@fantasy-engine/protocol";
 
 const port = Number(process.env.GAME_SERVER_PORT ?? 8787);
 const tickMs = 100;
@@ -21,6 +21,7 @@ interface Session {
   player: EntitySnapshot;
   inventory: ItemStack[];
   progress: PlayerProgress;
+  quests: QuestState[];
   lastMoveAt: number;
   lastAttackAt: number;
   lastPickupAt: number;
@@ -60,6 +61,7 @@ webSocketServer.on("connection", (socket) => {
     inventory: session.inventory,
     progress: session.progress,
     shopOffers: starterShopOffers,
+    quests: session.quests,
   });
 
   socket.on("message", (payload) => {
@@ -91,6 +93,7 @@ function createSession(socket: WebSocket): Session {
     player: createPlayer(id, `Player-${id.slice(0, 4)}`),
     inventory: [],
     progress: createInitialProgress(),
+    quests: createInitialQuests(),
     lastMoveAt: 0,
     lastAttackAt: 0,
     lastPickupAt: 0,
@@ -144,11 +147,13 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     player: { ...session.player, name },
     inventory: session.inventory,
     progress: session.progress,
+    quests: session.quests,
   });
 
   session.player = state.player;
   session.inventory = state.inventory;
   session.progress = state.progress;
+  session.quests = state.quests.length > 0 ? state.quests : createInitialQuests();
 
   send(session, {
     type: "world.init",
@@ -159,6 +164,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     inventory: session.inventory,
     progress: session.progress,
     shopOffers: starterShopOffers,
+    quests: session.quests,
   });
   broadcastChat("Sistema", `${session.player.name} entrou no mundo.`);
 }
@@ -229,6 +235,8 @@ function handleAttack(session: Session, sequence: number): void {
     if (award.leveledUp) {
       broadcastChat("Progresso", `${session.player.name} avancou para o level ${session.progress.level}.`);
     }
+
+    updateQuestProgressForNpcDefeat(session, result.target);
 
     createDrop(result.target);
     scheduleNpcRespawn(result.target);
@@ -492,6 +500,42 @@ async function saveSession(session: Session): Promise<void> {
     player: session.player,
     inventory: session.inventory,
     progress: session.progress,
+    quests: session.quests,
+  });
+}
+
+function updateQuestProgressForNpcDefeat(session: Session, npc: EntitySnapshot): void {
+  const questProgress = applyQuestNpcDefeat(session.quests, npc);
+
+  if (questProgress.completed.length === 0 && questProgress.quests === session.quests) {
+    return;
+  }
+
+  session.quests = questProgress.quests;
+
+  for (const quest of questProgress.completed) {
+    broadcastChat("Quest", `${session.player.name} completou ${quest.title}.`);
+  }
+
+  const rewards = claimCompletedQuestRewards(session.progress, session.inventory, session.quests);
+  session.progress = rewards.progress;
+  session.inventory = rewards.inventory;
+  session.quests = rewards.quests;
+
+  for (const quest of rewards.claimed) {
+    broadcastChat("Quest", `${session.player.name} recebeu recompensa de ${quest.title}.`);
+  }
+
+  sendProgress(session);
+  sendInventory(session);
+  sendQuests(session);
+  void saveSession(session);
+}
+
+function sendQuests(session: Session): void {
+  send(session, {
+    type: "quest.update",
+    quests: session.quests,
   });
 }
 

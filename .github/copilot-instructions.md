@@ -6,6 +6,8 @@ O Fantasy Engine sera uma engine de navegador para MMORPG massivo, inspirada no 
 
 A meta e reproduzir a experiencia, os sistemas e o fluxo de criacao do Intersect de forma completa para navegador, incluindo cliente, servidor, editor, mapas, eventos, combate, inventario, NPCs, quests, spells, shops, banco, administracao e ferramentas de operacao.
 
+O resultado final deve ser uma engine web equivalente ao Intersect, com as mesmas funcoes principais funcionando no navegador: criacao/edicao de mapas, eventos, quests, NPCs, combate, itens, spells, shops, banco, guildas, party, chat, admin tools, importadores e operacao de servidor. Cada sistema deve ser recriado de forma segura e server-authoritative, mantendo compatibilidade conceitual e fluxo semelhante ao Intersect.
+
 O codigo-fonte oficial do Intersect Engine esta baixado localmente em `vendor/Intersect-Engine` e deve ser tratado como referencia/vendor upstream.
 
 As decisoes de migracao para navegador devem seguir `docs/intersect-web-migration.md`.
