@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyCraftIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, createResource, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createNpc, createPlayer, createResource, getEquipmentAttackBonus, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
-import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ServerMessage } from "@fantasy-engine/protocol";
+import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ServerMessage } from "@fantasy-engine/protocol";
 
 const port = Number(process.env.GAME_SERVER_PORT ?? 8787);
 const tickMs = 100;
@@ -16,6 +16,7 @@ const minShopMs = 250;
 const minUseItemMs = 350;
 const minBankMs = 250;
 const minCraftMs = 400;
+const minEquipmentMs = 300;
 
 interface Session {
   id: string;
@@ -24,6 +25,7 @@ interface Session {
   player: EntitySnapshot;
   inventory: ItemStack[];
   bank: ItemStack[];
+  equipment: EquipmentState;
   progress: PlayerProgress;
   quests: QuestState[];
   lastMoveAt: number;
@@ -34,6 +36,7 @@ interface Session {
   lastUseItemAt: number;
   lastBankAt: number;
   lastCraftAt: number;
+  lastEquipmentAt: number;
   lastSpellAt: Record<string, number>;
   lastSequence: number;
 }
@@ -74,6 +77,7 @@ webSocketServer.on("connection", (socket) => {
     resources: getResources(),
     inventory: session.inventory,
     bank: session.bank,
+    equipment: session.equipment,
     progress: session.progress,
     shopOffers: starterShopOffers,
     quests: session.quests,
@@ -110,6 +114,7 @@ function createSession(socket: WebSocket): Session {
     player: createPlayer(id, `Player-${id.slice(0, 4)}`),
     inventory: [],
     bank: [],
+    equipment: createInitialEquipment(),
     progress: createInitialProgress(),
     quests: createInitialQuests(),
     lastMoveAt: 0,
@@ -120,6 +125,7 @@ function createSession(socket: WebSocket): Session {
     lastUseItemAt: 0,
     lastBankAt: 0,
     lastCraftAt: 0,
+    lastEquipmentAt: 0,
     lastSpellAt: {},
     lastSequence: 0,
   };
@@ -164,6 +170,12 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
       case "input.craftItem":
         await handleCraftItem(session, message.recipeId, message.sequence);
         return;
+      case "input.equipItem":
+        await handleEquipItem(session, message.itemId, message.sequence);
+        return;
+      case "input.unequipItem":
+        await handleUnequipItem(session, message.slot, message.sequence);
+        return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
         return;
@@ -184,6 +196,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     player: { ...session.player, name },
     inventory: session.inventory,
     bank: session.bank,
+    equipment: session.equipment,
     progress: session.progress,
     quests: session.quests,
   });
@@ -191,6 +204,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
   session.player = state.player;
   session.inventory = state.inventory;
   session.bank = state.bank;
+  session.equipment = state.equipment;
   session.progress = state.progress;
   session.quests = state.quests.length > 0 ? state.quests : createInitialQuests();
 
@@ -203,6 +217,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     resources: getResources(),
     inventory: session.inventory,
     bank: session.bank,
+    equipment: session.equipment,
     progress: session.progress,
     shopOffers: starterShopOffers,
     quests: session.quests,
@@ -254,7 +269,7 @@ function handleAttack(session: Session, sequence: number): void {
   session.lastSequence = sequence;
   session.lastAttackAt = now;
 
-  const result = applyAttackIntent(session.player, [...npcs.values()]);
+  const result = applyAttackIntent(session.player, [...npcs.values()], getEquipmentAttackBonus(session.equipment));
 
   if (!result) {
     return;
@@ -502,6 +517,13 @@ function sendBank(session: Session): void {
   });
 }
 
+function sendEquipment(session: Session): void {
+  send(session, {
+    type: "equipment.update",
+    equipment: session.equipment,
+  });
+}
+
 async function handleShopBuy(session: Session, itemId: string, sequence: number): Promise<void> {
   const now = Date.now();
 
@@ -705,6 +727,82 @@ async function handleCraftItem(session: Session, recipeId: string, sequence: num
   broadcastChat("Craft", `${session.player.name} criou ${result.output.quantity}x ${result.output.name}.`);
 }
 
+async function handleEquipItem(session: Session, itemId: string, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastEquipmentAt < minEquipmentMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_equipment",
+      message: "Equipment usado rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastEquipmentAt = now;
+
+  const result = applyEquipItemIntent(session.inventory, session.equipment, itemId);
+
+  if (!result.ok || !result.item) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "equipment_denied",
+      message: equipmentErrorMessage(result.error),
+    });
+    return;
+  }
+
+  session.inventory = result.inventory;
+  session.equipment = result.equipment;
+  await saveSession(session);
+  sendInventory(session);
+  sendEquipment(session);
+  broadcastChat("Equipment", `${session.player.name} equipou ${result.item.item.name}.`);
+}
+
+async function handleUnequipItem(session: Session, slot: EquipmentSlot, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastEquipmentAt < minEquipmentMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_equipment",
+      message: "Equipment usado rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastEquipmentAt = now;
+
+  const result = applyUnequipItemIntent(session.inventory, session.equipment, slot);
+
+  if (!result.ok || !result.item) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "equipment_denied",
+      message: equipmentErrorMessage(result.error),
+    });
+    return;
+  }
+
+  session.inventory = result.inventory;
+  session.equipment = result.equipment;
+  await saveSession(session);
+  sendInventory(session);
+  sendEquipment(session);
+  broadcastChat("Equipment", `${session.player.name} removeu ${result.item.item.name}.`);
+}
+
 function sendProgress(session: Session): void {
   send(session, {
     type: "player.progress",
@@ -721,6 +819,7 @@ async function saveSession(session: Session): Promise<void> {
     player: session.player,
     inventory: session.inventory,
     bank: session.bank,
+    equipment: session.equipment,
     progress: session.progress,
     quests: session.quests,
   });
@@ -816,6 +915,19 @@ function craftErrorMessage(error: string | undefined): string {
       return "Ingredientes insuficientes.";
     default:
       return "Craft recusado.";
+  }
+}
+
+function equipmentErrorMessage(error: string | undefined): string {
+  switch (error) {
+    case "missing_item":
+      return "Item nao encontrado no inventario.";
+    case "not_equippable":
+      return "Item nao pode ser equipado.";
+    case "empty_slot":
+      return "Slot vazio.";
+    default:
+      return "Equipment recusado.";
   }
 }
 

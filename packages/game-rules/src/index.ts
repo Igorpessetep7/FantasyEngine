@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { CraftingRecipe, Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
+import type { CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -53,6 +53,12 @@ export function createResource(id: string, kind: ResourceSnapshot["kind"], x: nu
   };
 }
 
+export function createInitialEquipment(): EquipmentState {
+  return {
+    weapon: null,
+  };
+}
+
 export function applyMoveIntent(entity: EntitySnapshot, direction: Direction, map: MapSnapshot): MoveResult {
   const delta = directionToDelta(direction);
   const next = {
@@ -75,14 +81,14 @@ export function applyMoveIntent(entity: EntitySnapshot, direction: Direction, ma
   };
 }
 
-export function applyAttackIntent(attacker: EntitySnapshot, targets: EntitySnapshot[]): AttackResult | undefined {
+export function applyAttackIntent(attacker: EntitySnapshot, targets: EntitySnapshot[], attackBonus = 0): AttackResult | undefined {
   const target = targets.find((candidate) => candidate.hp > 0 && isFacingAdjacent(attacker, candidate));
 
   if (!target) {
     return undefined;
   }
 
-  const damage = attacker.kind === "player" ? 9 : 5;
+  const damage = attacker.kind === "player" ? 9 + attackBonus : 5;
   const nextTarget = {
     ...target,
     hp: Math.max(0, target.hp - damage),
@@ -512,6 +518,16 @@ export const starterCraftingRecipes: CraftingRecipe[] = [
     ],
     output: { itemId: "training-scroll", name: "Pergaminho de Treino", quantity: 1 },
   },
+  {
+    recipeId: "training-sword-from-ore",
+    name: "Espada de Treino",
+    description: "Forja uma arma inicial para aumentar o dano fisico.",
+    ingredients: [
+      { itemId: "iron-ore", name: "Minerio de Ferro", quantity: 2 },
+      { itemId: "wood-log", name: "Madeira", quantity: 1 },
+    ],
+    output: { itemId: "training-sword", name: "Espada de Treino", quantity: 1 },
+  },
 ];
 
 export function applyCraftIntent(inventory: ItemStack[], recipeId: string): CraftResult {
@@ -577,6 +593,106 @@ function addStackQuantity(inventory: ItemStack[], item: ItemStack): void {
   }
 
   inventory.push({ ...item });
+}
+
+export interface EquipmentResult {
+  ok: boolean;
+  inventory: ItemStack[];
+  equipment: EquipmentState;
+  item?: EquippedItem;
+  error?: "missing_item" | "not_equippable" | "empty_slot";
+}
+
+const equippableItems: Record<string, Omit<EquippedItem, "item"> & { name: string }> = {
+  "training-sword": {
+    slot: "weapon",
+    name: "Espada de Treino",
+    attackBonus: 4,
+  },
+};
+
+export function applyEquipItemIntent(inventory: ItemStack[], equipment: EquipmentState, itemId: string): EquipmentResult {
+  const itemDefinition = equippableItems[itemId];
+  const nextInventory = cloneStacks(inventory);
+  const nextEquipment = cloneEquipment(equipment);
+
+  if (!itemDefinition) {
+    return {
+      ok: false,
+      inventory: nextInventory,
+      equipment: nextEquipment,
+      error: "not_equippable",
+    };
+  }
+
+  const inventoryItem = nextInventory.find((item) => item.itemId === itemId && item.quantity > 0);
+
+  if (!inventoryItem) {
+    return {
+      ok: false,
+      inventory: nextInventory,
+      equipment: nextEquipment,
+      error: "missing_item",
+    };
+  }
+
+  removeStackQuantity(nextInventory, itemId, 1);
+
+  const equippedItem: EquippedItem = {
+    slot: itemDefinition.slot,
+    item: { itemId, name: inventoryItem.name || itemDefinition.name, quantity: 1 },
+    attackBonus: itemDefinition.attackBonus,
+  };
+
+  const previousItem = nextEquipment[itemDefinition.slot];
+
+  if (previousItem) {
+    addStackQuantity(nextInventory, previousItem.item);
+  }
+
+  nextEquipment[itemDefinition.slot] = equippedItem;
+
+  return {
+    ok: true,
+    inventory: nextInventory,
+    equipment: nextEquipment,
+    item: equippedItem,
+  };
+}
+
+export function applyUnequipItemIntent(inventory: ItemStack[], equipment: EquipmentState, slot: EquipmentSlot): EquipmentResult {
+  const nextInventory = cloneStacks(inventory);
+  const nextEquipment = cloneEquipment(equipment);
+  const equippedItem = nextEquipment[slot];
+
+  if (!equippedItem) {
+    return {
+      ok: false,
+      inventory: nextInventory,
+      equipment: nextEquipment,
+      error: "empty_slot",
+    };
+  }
+
+  addStackQuantity(nextInventory, equippedItem.item);
+  nextEquipment[slot] = null;
+
+  return {
+    ok: true,
+    inventory: nextInventory,
+    equipment: nextEquipment,
+    item: equippedItem,
+  };
+}
+
+export function getEquipmentAttackBonus(equipment: EquipmentState): number {
+  return equipment.weapon?.attackBonus ?? 0;
+}
+
+function cloneEquipment(equipment: EquipmentState): EquipmentState {
+  return {
+    weapon: equipment.weapon ? { ...equipment.weapon, item: { ...equipment.weapon.item } } : null,
+  };
 }
 
 export interface SpellCastResult {

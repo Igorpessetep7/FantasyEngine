@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type CraftingRecipe, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -11,6 +11,7 @@ const shopListElement = getElement("shop-list");
 const questListElement = getElement("quest-list");
 const spellListElement = getElement("spell-list");
 const craftingListElement = getElement("crafting-list");
+const equipmentListElement = getElement("equipment-list");
 const levelLabelElement = getElement("level-label");
 const goldLabelElement = getElement("gold-label");
 const xpLabelElement = getElement("xp-label");
@@ -27,6 +28,7 @@ const mapItemSnapshots = new Map<string, MapItemSnapshot>();
 const resourceSnapshots = new Map<string, ResourceSnapshot>();
 let inventory: ItemStack[] = [];
 let bank: ItemStack[] = [];
+let equipment: EquipmentState = { weapon: null };
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let shopOffers: ShopOffer[] = [];
 let quests: QuestState[] = [];
@@ -80,6 +82,7 @@ function connect(): void {
         setResources(message.resources);
         inventory = message.inventory;
         bank = message.bank;
+        equipment = message.equipment;
         progress = message.progress;
         shopOffers = message.shopOffers;
         quests = message.quests;
@@ -91,6 +94,7 @@ function connect(): void {
         drawEntities();
         drawInventory();
         drawBank();
+        drawEquipment();
         drawProgress();
         drawShop();
         drawQuests();
@@ -113,6 +117,10 @@ function connect(): void {
         inventory = message.inventory;
         drawInventory();
         drawCrafting();
+        return;
+      case "equipment.update":
+        equipment = message.equipment;
+        drawEquipment();
         return;
       case "bank.update":
         bank = message.bank;
@@ -481,6 +489,14 @@ function drawInventory(): void {
       actions.appendChild(button);
     }
 
+    if (isEquippable(item.itemId)) {
+      const equipButton = document.createElement("button");
+      equipButton.type = "button";
+      equipButton.textContent = "Equipar";
+      equipButton.addEventListener("click", () => equipItem(item.itemId));
+      actions.appendChild(equipButton);
+    }
+
     const depositButton = document.createElement("button");
     depositButton.type = "button";
     depositButton.textContent = "Banco";
@@ -518,6 +534,42 @@ function drawBank(): void {
     row.append(label, button);
     bankListElement.appendChild(row);
   }
+}
+
+function drawEquipment(): void {
+  equipmentListElement.replaceChildren();
+
+  const row = document.createElement("div");
+  row.className = "equipment-item";
+
+  const label = document.createElement("span");
+  label.textContent = equipment.weapon ? `Arma: ${equipment.weapon.item.name} (+${equipment.weapon.attackBonus} dano)` : "Arma: Vazio";
+
+  if (equipment.weapon) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Remover";
+    button.addEventListener("click", () => unequipItem("weapon"));
+    row.append(label, button);
+  } else {
+    row.append(label);
+  }
+
+  equipmentListElement.appendChild(row);
+}
+
+function isEquippable(itemId: string): boolean {
+  return itemId === "training-sword";
+}
+
+function equipItem(itemId: string): void {
+  sequence += 1;
+  send({ type: "input.equipItem", itemId, sequence });
+}
+
+function unequipItem(slot: EquipmentSlot): void {
+  sequence += 1;
+  send({ type: "input.unequipItem", slot, sequence });
 }
 
 function transferBank(action: "deposit" | "withdraw", itemId: string): void {

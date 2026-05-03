@@ -59,6 +59,7 @@ cp .env.example .env
 - Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.
 - Inventario persistente por personagem.
 - Crafting autoritativo com receitas, consumo de ingredientes e criacao de itens no servidor.
+- Equipment/paperdoll inicial com arma equipada persistente e bonus de dano calculado no servidor.
 - Banco de itens persistente com deposito e saque validados pelo servidor.
 - XP, level e gold persistentes.
 - Shop com compras validadas pelo servidor.

@@ -101,6 +101,24 @@ export const CraftingRecipeSchema = z.object({
 
 export type CraftingRecipe = z.infer<typeof CraftingRecipeSchema>;
 
+export const EquipmentSlotSchema = z.enum(["weapon"]);
+
+export type EquipmentSlot = z.infer<typeof EquipmentSlotSchema>;
+
+export const EquippedItemSchema = z.object({
+  slot: EquipmentSlotSchema,
+  item: ItemStackSchema,
+  attackBonus: z.number().int().nonnegative(),
+});
+
+export type EquippedItem = z.infer<typeof EquippedItemSchema>;
+
+export const EquipmentStateSchema = z.object({
+  weapon: EquippedItemSchema.nullable(),
+});
+
+export type EquipmentState = z.infer<typeof EquipmentStateSchema>;
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("client.hello"),
@@ -159,6 +177,16 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
+    type: z.literal("input.equipItem"),
+    itemId: z.string().min(1).max(80),
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
+    type: z.literal("input.unequipItem"),
+    slot: EquipmentSlotSchema,
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
     type: z.literal("chat.send"),
     text: z.string().trim().min(1).max(180),
   }),
@@ -209,6 +237,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     resources: z.array(ResourceSnapshotSchema),
     inventory: z.array(ItemStackSchema),
     bank: z.array(ItemStackSchema),
+    equipment: EquipmentStateSchema,
     progress: PlayerProgressSchema,
     shopOffers: z.array(ShopOfferSchema),
     quests: z.array(QuestStateSchema),
@@ -234,6 +263,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("bank.update"),
     bank: z.array(ItemStackSchema),
+  }),
+  z.object({
+    type: z.literal("equipment.update"),
+    equipment: EquipmentStateSchema,
   }),
   z.object({
     type: z.literal("player.progress"),

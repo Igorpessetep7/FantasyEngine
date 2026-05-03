@@ -125,6 +125,7 @@ canvas {
 #inventory-list,
 #bank-list,
 #crafting-list,
+#equipment-list,
 #shop-list,
 #quest-list,
 #spell-list {
@@ -216,13 +217,25 @@ canvas {
   align-items: center;
 }
 
+.equipment-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #2f3b34;
+  border-radius: 6px;
+  background: #101713;
+}
+
 .item-actions {
   display: flex;
   gap: 6px;
 }
 
 .inventory-item button,
-.bank-item button {
+.bank-item button,
+.equipment-item button {
   border: 0;
   border-radius: 6px;
   padding: 6px 8px;

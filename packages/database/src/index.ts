@@ -1,10 +1,11 @@
 import { Pool } from "pg";
-import type { EntitySnapshot, ItemStack, PlayerProgress, QuestState } from "@fantasy-engine/protocol";
+import type { EntitySnapshot, EquipmentState, ItemStack, PlayerProgress, QuestState } from "@fantasy-engine/protocol";
 
 export interface CharacterState {
   player: EntitySnapshot;
   inventory: ItemStack[];
   bank: ItemStack[];
+  equipment: EquipmentState;
   progress: PlayerProgress;
   quests: QuestState[];
 }
@@ -46,6 +47,7 @@ class MemoryCharacterRepository implements CharacterRepository {
       player: { ...existing.player, id: defaults.player.id, name: defaults.player.name },
       inventory: existing.inventory,
       bank: existing.bank,
+      equipment: existing.equipment,
       progress: existing.progress,
       quests: existing.quests,
     });
@@ -78,6 +80,7 @@ class PostgresCharacterRepository implements CharacterRepository {
         max_hp INTEGER NOT NULL CHECK (max_hp > 0),
         inventory JSONB NOT NULL DEFAULT '[]'::jsonb,
         bank JSONB NOT NULL DEFAULT '[]'::jsonb,
+        equipment JSONB NOT NULL DEFAULT '{"weapon": null}'::jsonb,
           level INTEGER NOT NULL DEFAULT 1 CHECK (level > 0),
           xp INTEGER NOT NULL DEFAULT 0 CHECK (xp >= 0),
           xp_to_next INTEGER NOT NULL DEFAULT 50 CHECK (xp_to_next > 0),
@@ -94,6 +97,7 @@ class PostgresCharacterRepository implements CharacterRepository {
         ADD COLUMN IF NOT EXISTS xp_to_next INTEGER NOT NULL DEFAULT 50 CHECK (xp_to_next > 0),
         ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0 CHECK (gold >= 0),
         ADD COLUMN IF NOT EXISTS bank JSONB NOT NULL DEFAULT '[]'::jsonb,
+        ADD COLUMN IF NOT EXISTS equipment JSONB NOT NULL DEFAULT '{"weapon": null}'::jsonb,
         ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '[]'::jsonb;
     `);
     await this.pool.query("CREATE INDEX IF NOT EXISTS idx_player_characters_updated_at ON player_characters (updated_at);");
@@ -101,7 +105,7 @@ class PostgresCharacterRepository implements CharacterRepository {
 
   async loadOrCreate(clientId: string, defaults: CharacterState): Promise<CharacterState> {
     const existing = await this.pool.query<StoredCharacterRow>(
-      "SELECT client_id, name, x, y, direction, hp, max_hp, inventory, bank, level, xp, xp_to_next, gold, quests FROM player_characters WHERE client_id = $1",
+      "SELECT client_id, name, x, y, direction, hp, max_hp, inventory, bank, equipment, level, xp, xp_to_next, gold, quests FROM player_characters WHERE client_id = $1",
       [clientId],
     );
 
@@ -116,8 +120,8 @@ class PostgresCharacterRepository implements CharacterRepository {
   async save(clientId: string, state: CharacterState): Promise<void> {
     await this.pool.query(
       `
-        INSERT INTO player_characters (client_id, name, map_id, x, y, direction, hp, max_hp, inventory, bank, level, xp, xp_to_next, gold, quests, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $12, $13, $14, $15::jsonb, NOW())
+        INSERT INTO player_characters (client_id, name, map_id, x, y, direction, hp, max_hp, inventory, bank, equipment, level, xp, xp_to_next, gold, quests, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16::jsonb, NOW())
         ON CONFLICT (client_id) DO UPDATE SET
           name = EXCLUDED.name,
           map_id = EXCLUDED.map_id,
@@ -128,6 +132,7 @@ class PostgresCharacterRepository implements CharacterRepository {
           max_hp = EXCLUDED.max_hp,
           inventory = EXCLUDED.inventory,
           bank = EXCLUDED.bank,
+          equipment = EXCLUDED.equipment,
           level = EXCLUDED.level,
           xp = EXCLUDED.xp,
           xp_to_next = EXCLUDED.xp_to_next,
@@ -146,6 +151,7 @@ class PostgresCharacterRepository implements CharacterRepository {
         state.player.maxHp,
         JSON.stringify(state.inventory),
         JSON.stringify(state.bank),
+        JSON.stringify(state.equipment),
         state.progress.level,
         state.progress.xp,
         state.progress.xpToNext,
@@ -166,6 +172,7 @@ interface StoredCharacterRow {
   max_hp: number;
   inventory: ItemStack[];
   bank: ItemStack[];
+  equipment: EquipmentState;
   level: number;
   xp: number;
   xp_to_next: number;
@@ -187,6 +194,7 @@ function rowToState(row: StoredCharacterRow, runtimeEntityId: string, runtimeNam
     },
     inventory: Array.isArray(row.inventory) ? row.inventory : [],
     bank: Array.isArray(row.bank) ? row.bank : [],
+    equipment: normalizeEquipment(row.equipment),
     progress: {
       level: row.level,
       xp: row.xp,
@@ -202,11 +210,18 @@ function cloneState(state: CharacterState): CharacterState {
     player: { ...state.player },
     inventory: state.inventory.map((item) => ({ ...item })),
     bank: state.bank.map((item) => ({ ...item })),
+    equipment: normalizeEquipment(state.equipment),
     progress: { ...state.progress },
     quests: state.quests.map((quest) => ({
       ...quest,
       target: { ...quest.target },
       reward: { ...quest.reward, items: quest.reward.items.map((item) => ({ ...item })) },
     })),
+  };
+}
+
+function normalizeEquipment(equipment: EquipmentState | undefined): EquipmentState {
+  return {
+    weapon: equipment?.weapon ? { ...equipment.weapon, item: { ...equipment.weapon.item } } : null,
   };
 }
