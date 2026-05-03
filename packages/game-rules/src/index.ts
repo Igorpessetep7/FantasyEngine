@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
+import type { CraftingRecipe, Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -481,6 +481,102 @@ function transferStack(source: ItemStack[], target: ItemStack[], itemId: string,
 
 function cloneStacks(stacks: ItemStack[]): ItemStack[] {
   return stacks.map((item) => ({ ...item }));
+}
+
+export interface CraftResult {
+  ok: boolean;
+  inventory: ItemStack[];
+  recipe?: CraftingRecipe;
+  output?: ItemStack;
+  error?: "unknown_recipe" | "missing_ingredients";
+}
+
+export const starterCraftingRecipes: CraftingRecipe[] = [
+  {
+    recipeId: "small-potion-from-slime",
+    name: "Pocao Pequena",
+    description: "Mistura Gel de Slime com Madeira para criar uma pocao simples.",
+    ingredients: [
+      { itemId: "slime-gel", name: "Gel de Slime", quantity: 1 },
+      { itemId: "wood-log", name: "Madeira", quantity: 1 },
+    ],
+    output: { itemId: "small-potion", name: "Pocao Pequena", quantity: 1 },
+  },
+  {
+    recipeId: "training-scroll-from-ore",
+    name: "Pergaminho de Treino",
+    description: "Usa minerio e madeira como material de treino inicial.",
+    ingredients: [
+      { itemId: "iron-ore", name: "Minerio de Ferro", quantity: 1 },
+      { itemId: "wood-log", name: "Madeira", quantity: 2 },
+    ],
+    output: { itemId: "training-scroll", name: "Pergaminho de Treino", quantity: 1 },
+  },
+];
+
+export function applyCraftIntent(inventory: ItemStack[], recipeId: string): CraftResult {
+  const recipe = starterCraftingRecipes.find((candidate) => candidate.recipeId === recipeId);
+
+  if (!recipe) {
+    return {
+      ok: false,
+      inventory: cloneStacks(inventory),
+      error: "unknown_recipe",
+    };
+  }
+
+  const nextInventory = cloneStacks(inventory);
+
+  for (const ingredient of recipe.ingredients) {
+    const existing = nextInventory.find((item) => item.itemId === ingredient.itemId);
+
+    if (!existing || existing.quantity < ingredient.quantity) {
+      return {
+        ok: false,
+        inventory: nextInventory,
+        recipe,
+        error: "missing_ingredients",
+      };
+    }
+  }
+
+  for (const ingredient of recipe.ingredients) {
+    removeStackQuantity(nextInventory, ingredient.itemId, ingredient.quantity);
+  }
+
+  addStackQuantity(nextInventory, recipe.output);
+
+  return {
+    ok: true,
+    inventory: nextInventory,
+    recipe,
+    output: { ...recipe.output },
+  };
+}
+
+function removeStackQuantity(inventory: ItemStack[], itemId: string, quantity: number): void {
+  const existing = inventory.find((item) => item.itemId === itemId);
+
+  if (!existing) {
+    return;
+  }
+
+  existing.quantity -= quantity;
+
+  if (existing.quantity <= 0) {
+    inventory.splice(inventory.indexOf(existing), 1);
+  }
+}
+
+function addStackQuantity(inventory: ItemStack[], item: ItemStack): void {
+  const existing = inventory.find((stack) => stack.itemId === item.itemId);
+
+  if (existing) {
+    existing.quantity += item.quantity;
+    return;
+  }
+
+  inventory.push({ ...item });
 }
 
 export interface SpellCastResult {

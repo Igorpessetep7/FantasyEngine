@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, createResource, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyCraftIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, createResource, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ServerMessage } from "@fantasy-engine/protocol";
 
@@ -15,6 +15,7 @@ const minResourceMs = 700;
 const minShopMs = 250;
 const minUseItemMs = 350;
 const minBankMs = 250;
+const minCraftMs = 400;
 
 interface Session {
   id: string;
@@ -32,6 +33,7 @@ interface Session {
   lastShopAt: number;
   lastUseItemAt: number;
   lastBankAt: number;
+  lastCraftAt: number;
   lastSpellAt: Record<string, number>;
   lastSequence: number;
 }
@@ -76,6 +78,7 @@ webSocketServer.on("connection", (socket) => {
     shopOffers: starterShopOffers,
     quests: session.quests,
     spells: starterSpells,
+    craftingRecipes: starterCraftingRecipes,
   });
 
   socket.on("message", (payload) => {
@@ -116,6 +119,7 @@ function createSession(socket: WebSocket): Session {
     lastShopAt: 0,
     lastUseItemAt: 0,
     lastBankAt: 0,
+    lastCraftAt: 0,
     lastSpellAt: {},
     lastSequence: 0,
   };
@@ -156,6 +160,9 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
         return;
       case "input.bankWithdraw":
         await handleBankWithdraw(session, message.itemId, message.quantity, message.sequence);
+        return;
+      case "input.craftItem":
+        await handleCraftItem(session, message.recipeId, message.sequence);
         return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
@@ -200,6 +207,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     shopOffers: starterShopOffers,
     quests: session.quests,
     spells: starterSpells,
+    craftingRecipes: starterCraftingRecipes,
   });
   broadcastChat("Sistema", `${session.player.name} entrou no mundo.`);
 }
@@ -661,6 +669,42 @@ async function handleBankWithdraw(session: Session, itemId: string, quantity: nu
   broadcastChat("Banco", `${session.player.name} sacou ${result.item.quantity}x ${result.item.name}.`);
 }
 
+async function handleCraftItem(session: Session, recipeId: string, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastCraftAt < minCraftMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_craft",
+      message: "Craft enviado rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastCraftAt = now;
+
+  const result = applyCraftIntent(session.inventory, recipeId);
+
+  if (!result.ok || !result.output || !result.recipe) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "craft_denied",
+      message: craftErrorMessage(result.error),
+    });
+    return;
+  }
+
+  session.inventory = result.inventory;
+  await saveSession(session);
+  sendInventory(session);
+  broadcastChat("Craft", `${session.player.name} criou ${result.output.quantity}x ${result.output.name}.`);
+}
+
 function sendProgress(session: Session): void {
   send(session, {
     type: "player.progress",
@@ -761,6 +805,17 @@ function resourceErrorMessage(error: string | undefined): string {
       return "Recurso esgotado.";
     default:
       return "Coleta recusada.";
+  }
+}
+
+function craftErrorMessage(error: string | undefined): string {
+  switch (error) {
+    case "unknown_recipe":
+      return "Receita indisponivel.";
+    case "missing_ingredients":
+      return "Ingredientes insuficientes.";
+    default:
+      return "Craft recusado.";
   }
 }
 

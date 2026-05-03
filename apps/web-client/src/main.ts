@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type CraftingRecipe, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -10,6 +10,7 @@ const bankListElement = getElement("bank-list");
 const shopListElement = getElement("shop-list");
 const questListElement = getElement("quest-list");
 const spellListElement = getElement("spell-list");
+const craftingListElement = getElement("crafting-list");
 const levelLabelElement = getElement("level-label");
 const goldLabelElement = getElement("gold-label");
 const xpLabelElement = getElement("xp-label");
@@ -30,6 +31,7 @@ let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let shopOffers: ShopOffer[] = [];
 let quests: QuestState[] = [];
 let spells: SpellDefinition[] = [];
+let craftingRecipes: CraftingRecipe[] = [];
 
 const app = new Application();
 const world = new Container();
@@ -82,6 +84,7 @@ function connect(): void {
         shopOffers = message.shopOffers;
         quests = message.quests;
         spells = message.spells;
+        craftingRecipes = message.craftingRecipes;
         drawMap(message.map);
         drawResources();
         drawMapItems();
@@ -92,6 +95,7 @@ function connect(): void {
         drawShop();
         drawQuests();
         drawSpells();
+        drawCrafting();
         return;
       case "world.entities":
         setEntities(message.entities);
@@ -108,6 +112,7 @@ function connect(): void {
       case "inventory.update":
         inventory = message.inventory;
         drawInventory();
+        drawCrafting();
         return;
       case "bank.update":
         bank = message.bank;
@@ -129,6 +134,10 @@ function connect(): void {
       case "spell.list":
         spells = message.spells;
         drawSpells();
+        return;
+      case "craft.list":
+        craftingRecipes = message.craftingRecipes;
+        drawCrafting();
         return;
       case "chat.message":
         appendChat(message.from, message.text);
@@ -594,6 +603,45 @@ function drawSpells(): void {
     row.append(label, button);
     spellListElement.appendChild(row);
   }
+}
+
+function drawCrafting(): void {
+  craftingListElement.replaceChildren();
+
+  for (const recipe of craftingRecipes) {
+    const row = document.createElement("div");
+    row.className = "crafting-recipe";
+
+    const info = document.createElement("div");
+    const title = document.createElement("span");
+    title.textContent = `${recipe.output.quantity}x ${recipe.output.name}`;
+
+    const ingredients = document.createElement("span");
+    ingredients.textContent = recipe.ingredients.map((item) => `${item.quantity}x ${item.name}`).join(" + ");
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Criar";
+    button.title = recipe.description;
+    button.disabled = !canCraft(recipe);
+    button.addEventListener("click", () => craftItem(recipe.recipeId));
+
+    info.append(title, ingredients);
+    row.append(info, button);
+    craftingListElement.appendChild(row);
+  }
+}
+
+function canCraft(recipe: CraftingRecipe): boolean {
+  return recipe.ingredients.every((ingredient) => {
+    const item = inventory.find((candidate) => candidate.itemId === ingredient.itemId);
+    return item !== undefined && item.quantity >= ingredient.quantity;
+  });
+}
+
+function craftItem(recipeId: string): void {
+  sequence += 1;
+  send({ type: "input.craftItem", recipeId, sequence });
 }
 
 function castSpell(spellId: string): void {

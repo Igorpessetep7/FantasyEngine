@@ -124,6 +124,7 @@ canvas {
 
 #inventory-list,
 #bank-list,
+#crafting-list,
 #shop-list,
 #quest-list,
 #spell-list {
@@ -235,6 +236,40 @@ canvas {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+}
+
+.crafting-recipe {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid #2f3b34;
+  border-radius: 6px;
+  background: #101713;
+}
+
+.crafting-recipe span {
+  display: block;
+}
+
+.crafting-recipe span + span {
+  color: #8fa397;
+  font-size: 12px;
+}
+
+.crafting-recipe button {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #0c120f;
+  background: #9fd8d5;
+  cursor: pointer;
+}
+
+.crafting-recipe button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .spell-entry button {

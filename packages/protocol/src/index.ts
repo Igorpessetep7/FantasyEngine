@@ -91,6 +91,16 @@ export const SpellDefinitionSchema = z.object({
 
 export type SpellDefinition = z.infer<typeof SpellDefinitionSchema>;
 
+export const CraftingRecipeSchema = z.object({
+  recipeId: z.string(),
+  name: z.string(),
+  description: z.string(),
+  ingredients: z.array(ItemStackSchema),
+  output: ItemStackSchema,
+});
+
+export type CraftingRecipe = z.infer<typeof CraftingRecipeSchema>;
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("client.hello"),
@@ -141,6 +151,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("input.bankWithdraw"),
     itemId: z.string().min(1).max(80),
     quantity: ItemQuantitySchema,
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
+    type: z.literal("input.craftItem"),
+    recipeId: z.string().min(1).max(80),
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
@@ -198,6 +213,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     shopOffers: z.array(ShopOfferSchema),
     quests: z.array(QuestStateSchema),
     spells: z.array(SpellDefinitionSchema),
+    craftingRecipes: z.array(CraftingRecipeSchema),
   }),
   z.object({
     type: z.literal("world.entities"),
@@ -234,6 +250,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("spell.list"),
     spells: z.array(SpellDefinitionSchema),
+  }),
+  z.object({
+    type: z.literal("craft.list"),
+    craftingRecipes: z.array(CraftingRecipeSchema),
   }),
   z.object({
     type: z.literal("chat.message"),
