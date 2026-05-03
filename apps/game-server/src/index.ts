@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyTeleportIntent, applyTileAttributeEffect, applyUnequipItemIntent, awardEventProgress, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, respawnEntity, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyTeleportIntent, applyTileAttributeEffect, applyUnequipItemIntent, awardEventProgress, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, isEntityInSafeZone, respawnEntity, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerEventFlags, type PlayerEventVariables, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
@@ -344,6 +344,15 @@ function handleAttack(session: Session, sequence: number): void {
   session.lastSequence = sequence;
   session.lastAttackAt = now;
 
+  if (isEntityInSafeZone(session.player, starterMap)) {
+    send(session, {
+      type: "server.error",
+      code: "safe_zone_combat",
+      message: "Combate bloqueado em zona segura.",
+    });
+    return;
+  }
+
   const result = applyAttackIntent(session.player, [...npcs.values()], getEquipmentAttackBonus(session.equipment) + getStatsAttackBonus(session.stats));
 
   if (!result) {
@@ -367,7 +376,7 @@ function handleAttack(session: Session, sequence: number): void {
 function applyNpcCounterAttack(session: Session, npc: EntitySnapshot): void {
   const damage = getNpcAttackDamage(npc);
 
-  if (damage <= 0) {
+  if (damage <= 0 || isEntityInSafeZone(session.player, starterMap)) {
     return;
   }
 
@@ -1353,6 +1362,15 @@ function handleCastSpell(session: Session, spellId: string, sequence: number): v
 
   session.lastSequence = sequence;
   session.lastSpellAt[spellId] = now;
+
+  if (isEntityInSafeZone(session.player, starterMap)) {
+    send(session, {
+      type: "server.error",
+      code: "safe_zone_spell",
+      message: "Spell bloqueada em zona segura.",
+    });
+    return;
+  }
 
   const result = applySpellCastIntent(session.player, spellId, [...npcs.values()], starterMap, getStatsSpellDamageBonus(session.stats));
 

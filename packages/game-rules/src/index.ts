@@ -213,7 +213,7 @@ export function applyTeleportIntent(entity: EntitySnapshot, map: MapSnapshot, de
 export function applyTileAttributeEffect(entity: EntitySnapshot, map: MapSnapshot): TileAttributeResult {
   const attribute = getTileAttribute(map, entity.x, entity.y);
 
-  if (attribute.kind === "none" || attribute.kind === "spawn") {
+  if (attribute.kind === "none" || attribute.kind === "spawn" || attribute.kind === "safeZone") {
     return {
       triggered: false,
       entity,
@@ -251,6 +251,10 @@ export function applyTileAttributeEffect(entity: EntitySnapshot, map: MapSnapsho
     attributeKind: "warp",
     label: attribute.label,
   };
+}
+
+export function isEntityInSafeZone(entity: EntitySnapshot, map: MapSnapshot): boolean {
+  return getTileAttribute(map, entity.x, entity.y).kind === "safeZone";
 }
 
 export function applyAttackIntent(attacker: EntitySnapshot, targets: EntitySnapshot[], attackBonus = 0): AttackResult | undefined {

@@ -63,6 +63,7 @@ cp .env.example .env
 - Atributos de tile com warp aplicado apos movimento validado pelo servidor.
 - Atributos de tile com dano aplicado ao personagem apenas pelo servidor.
 - Atributo de tile de spawn usado para criar personagem e respawn autoritativo.
+- Atributo de tile de zona segura bloqueando combate e spells no servidor.
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
 - Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.
