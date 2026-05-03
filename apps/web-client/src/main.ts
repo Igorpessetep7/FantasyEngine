@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -23,6 +23,7 @@ let selfId = "";
 let mapSnapshot: MapSnapshot | undefined;
 const entitySnapshots = new Map<string, EntitySnapshot>();
 const mapItemSnapshots = new Map<string, MapItemSnapshot>();
+const resourceSnapshots = new Map<string, ResourceSnapshot>();
 let inventory: ItemStack[] = [];
 let bank: ItemStack[] = [];
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
@@ -33,6 +34,7 @@ let spells: SpellDefinition[] = [];
 const app = new Application();
 const world = new Container();
 const tileLayer = new Container();
+const resourceLayer = new Container();
 const mapItemLayer = new Container();
 const entityLayer = new Container();
 
@@ -45,7 +47,7 @@ await app.init({
 });
 
 gameElement.appendChild(app.canvas);
-world.addChild(tileLayer, mapItemLayer, entityLayer);
+world.addChild(tileLayer, resourceLayer, mapItemLayer, entityLayer);
 app.stage.addChild(world);
 
 connect();
@@ -73,6 +75,7 @@ function connect(): void {
         mapSnapshot = message.map;
         setEntities(message.entities);
         setMapItems(message.mapItems);
+        setResources(message.resources);
         inventory = message.inventory;
         bank = message.bank;
         progress = message.progress;
@@ -80,6 +83,7 @@ function connect(): void {
         quests = message.quests;
         spells = message.spells;
         drawMap(message.map);
+        drawResources();
         drawMapItems();
         drawEntities();
         drawInventory();
@@ -96,6 +100,10 @@ function connect(): void {
       case "world.mapItems":
         setMapItems(message.mapItems);
         drawMapItems();
+        return;
+      case "world.resources":
+        setResources(message.resources);
+        drawResources();
         return;
       case "inventory.update":
         inventory = message.inventory;
@@ -150,6 +158,11 @@ function bindInput(): void {
       if (event.key === "e" || event.key === "E") {
         event.preventDefault();
         pickupNearestItem();
+      }
+
+      if (event.key === "r" || event.key === "R") {
+        event.preventDefault();
+        gatherNearestResource();
       }
 
       if (event.key === "1" && spells[0]) {
@@ -344,6 +357,70 @@ function setMapItems(mapItems: MapItemSnapshot[]): void {
   for (const mapItem of mapItems) {
     mapItemSnapshots.set(mapItem.id, mapItem);
   }
+}
+
+function drawResources(): void {
+  if (!mapSnapshot) {
+    return;
+  }
+
+  resourceLayer.removeChildren();
+
+  for (const resource of resourceSnapshots.values()) {
+    const x = resource.x * mapSnapshot.tileSize;
+    const y = resource.y * mapSnapshot.tileSize;
+    const graphic = new Graphics();
+
+    if (resource.kind === "tree") {
+      graphic.circle(x + mapSnapshot.tileSize / 2, y + 14, 12);
+      graphic.fill(resource.depleted ? 0x566158 : 0x3f9f5f);
+      graphic.rect(x + mapSnapshot.tileSize / 2 - 3, y + 19, 6, 18);
+      graphic.fill(resource.depleted ? 0x51483a : 0x7a6240);
+    } else {
+      graphic.roundRect(x + 7, y + 13, mapSnapshot.tileSize - 14, mapSnapshot.tileSize - 20, 5);
+      graphic.fill(resource.depleted ? 0x4b5553 : 0x8aa4a2);
+      graphic.stroke({ color: 0x1a2320, width: 2 });
+    }
+
+    if (!resource.depleted) {
+      const hpBack = new Graphics();
+      hpBack.rect(x + 7, y + mapSnapshot.tileSize - 7, mapSnapshot.tileSize - 14, 3);
+      hpBack.fill(0x1b241f);
+
+      const hpFill = new Graphics();
+      hpFill.rect(x + 7, y + mapSnapshot.tileSize - 7, (mapSnapshot.tileSize - 14) * (resource.hp / resource.maxHp), 3);
+      hpFill.fill(resource.kind === "tree" ? 0x90df7c : 0x9fd8d5);
+      resourceLayer.addChild(graphic, hpBack, hpFill);
+    } else {
+      resourceLayer.addChild(graphic);
+    }
+  }
+}
+
+function setResources(resources: ResourceSnapshot[]): void {
+  resourceSnapshots.clear();
+
+  for (const resource of resources) {
+    resourceSnapshots.set(resource.id, resource);
+  }
+}
+
+function gatherNearestResource(): void {
+  const self = entitySnapshots.get(selfId);
+
+  if (!self) {
+    return;
+  }
+
+  const nearest = [...resourceSnapshots.values()].find((resource) => !resource.depleted && Math.abs(self.x - resource.x) + Math.abs(self.y - resource.y) <= 1);
+
+  if (!nearest) {
+    appendChat("Sistema", "Nenhum recurso ao alcance.");
+    return;
+  }
+
+  sequence += 1;
+  send({ type: "input.gatherResource", resourceId: nearest.id, sequence });
 }
 
 function pickupNearestItem(): void {

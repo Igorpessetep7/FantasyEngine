@@ -47,6 +47,7 @@ cp .env.example .env
 - `WASD` ou setas: movimento validado pelo servidor.
 - `Espaco`: ataque na entidade que estiver na direcao do personagem.
 - `E`: pegar item proximo validado pelo servidor.
+- `R`: coletar recurso proximo validado pelo servidor.
 - `1`: conjurar a primeira spell equipada.
 
 ## Sistemas implementados no prototipo
@@ -55,6 +56,7 @@ cp .env.example .env
 - NPCs com vida e respawn.
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
+- Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.
 - Inventario persistente por personagem.
 - Banco de itens persistente com deposito e saque validados pelo servidor.
 - XP, level e gold persistentes.

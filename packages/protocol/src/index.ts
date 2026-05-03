@@ -27,6 +27,23 @@ export const MapItemSnapshotSchema = z.object({
 
 export type MapItemSnapshot = z.infer<typeof MapItemSnapshotSchema>;
 
+export const ResourceKindSchema = z.enum(["tree", "ore"]);
+
+export type ResourceKind = z.infer<typeof ResourceKindSchema>;
+
+export const ResourceSnapshotSchema = z.object({
+  id: z.string(),
+  kind: ResourceKindSchema,
+  name: z.string(),
+  x: z.number().int(),
+  y: z.number().int(),
+  hp: z.number().int().nonnegative(),
+  maxHp: z.number().int().positive(),
+  depleted: z.boolean(),
+});
+
+export type ResourceSnapshot = z.infer<typeof ResourceSnapshotSchema>;
+
 export const PlayerProgressSchema = z.object({
   level: z.number().int().positive(),
   xp: z.number().int().nonnegative(),
@@ -92,6 +109,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("input.pickup"),
     itemInstanceId: z.string().min(1).max(80),
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
+    type: z.literal("input.gatherResource"),
+    resourceId: z.string().min(1).max(80),
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
@@ -169,6 +191,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     map: MapSnapshotSchema,
     entities: z.array(EntitySnapshotSchema),
     mapItems: z.array(MapItemSnapshotSchema),
+    resources: z.array(ResourceSnapshotSchema),
     inventory: z.array(ItemStackSchema),
     bank: z.array(ItemStackSchema),
     progress: PlayerProgressSchema,
@@ -183,6 +206,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("world.mapItems"),
     mapItems: z.array(MapItemSnapshotSchema),
+  }),
+  z.object({
+    type: z.literal("world.resources"),
+    resources: z.array(ResourceSnapshotSchema),
   }),
   z.object({
     type: z.literal("inventory.update"),

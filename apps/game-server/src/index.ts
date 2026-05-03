@@ -2,15 +2,16 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, createResource, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
-import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ServerMessage } from "@fantasy-engine/protocol";
+import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ServerMessage } from "@fantasy-engine/protocol";
 
 const port = Number(process.env.GAME_SERVER_PORT ?? 8787);
 const tickMs = 100;
 const minMoveMs = 130;
 const minAttackMs = 500;
 const minPickupMs = 250;
+const minResourceMs = 700;
 const minShopMs = 250;
 const minUseItemMs = 350;
 const minBankMs = 250;
@@ -27,6 +28,7 @@ interface Session {
   lastMoveAt: number;
   lastAttackAt: number;
   lastPickupAt: number;
+  lastResourceAt: number;
   lastShopAt: number;
   lastUseItemAt: number;
   lastBankAt: number;
@@ -44,6 +46,11 @@ const npcs = new Map<string, EntitySnapshot>([
   ["npc-guard-1", createNpc("npc-guard-1", "Guardiao", 18, 6)],
 ]);
 const mapItems = new Map<string, MapItemSnapshot>();
+const resources = new Map<string, ResourceSnapshot>([
+  ["resource-tree-1", createResource("resource-tree-1", "tree", 5, 4)],
+  ["resource-tree-2", createResource("resource-tree-2", "tree", 10, 7)],
+  ["resource-ore-1", createResource("resource-ore-1", "ore", 4, 6)],
+]);
 
 const httpServer = createServer((_, response) => {
   response.writeHead(200, { "content-type": "application/json" });
@@ -62,6 +69,7 @@ webSocketServer.on("connection", (socket) => {
     map: starterMap,
     entities: getEntities(),
     mapItems: getMapItems(),
+    resources: getResources(),
     inventory: session.inventory,
     bank: session.bank,
     progress: session.progress,
@@ -104,6 +112,7 @@ function createSession(socket: WebSocket): Session {
     lastMoveAt: 0,
     lastAttackAt: 0,
     lastPickupAt: 0,
+    lastResourceAt: 0,
     lastShopAt: 0,
     lastUseItemAt: 0,
     lastBankAt: 0,
@@ -129,6 +138,9 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
         return;
       case "input.pickup":
         await handlePickup(session, message.itemInstanceId, message.sequence);
+        return;
+      case "input.gatherResource":
+        await handleGatherResource(session, message.resourceId, message.sequence);
         return;
       case "input.shopBuy":
         await handleShopBuy(session, message.itemId, message.sequence);
@@ -181,6 +193,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     map: starterMap,
     entities: getEntities(),
     mapItems: getMapItems(),
+    resources: getResources(),
     inventory: session.inventory,
     bank: session.bank,
     progress: session.progress,
@@ -392,6 +405,79 @@ function broadcastMapItems(): void {
     type: "world.mapItems",
     mapItems: getMapItems(),
   });
+}
+
+function getResources(): ResourceSnapshot[] {
+  return [...resources.values()];
+}
+
+function broadcastResources(): void {
+  broadcast({
+    type: "world.resources",
+    resources: getResources(),
+  });
+}
+
+async function handleGatherResource(session: Session, resourceId: string, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastResourceAt < minResourceMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_resource",
+      message: "Coleta de recurso enviada rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastResourceAt = now;
+
+  const resource = resources.get(resourceId);
+
+  if (!resource) {
+    send(session, {
+      type: "server.error",
+      code: "unknown_resource",
+      message: "Recurso inexistente.",
+    });
+    return;
+  }
+
+  const result = applyResourceGatherIntent(session.player, resource);
+
+  if (!result.ok || !result.item) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "resource_denied",
+      message: resourceErrorMessage(result.error),
+    });
+    return;
+  }
+
+  resources.set(resource.id, result.resource);
+  addInventoryItem(session.inventory, result.item);
+  await saveSession(session);
+  sendInventory(session);
+  broadcastResources();
+  broadcastChat("Recurso", `${session.player.name} coletou ${result.item.quantity}x ${result.item.name} de ${resource.name}.`);
+
+  if (result.depleted) {
+    broadcastChat("Recurso", `${resource.name} foi esgotado.`);
+    scheduleResourceRespawn(result.resource);
+  }
+}
+
+function scheduleResourceRespawn(resource: ResourceSnapshot): void {
+  setTimeout(() => {
+    resources.set(resource.id, { ...resource, hp: resource.maxHp, depleted: false });
+    broadcastChat("Sistema", `${resource.name} voltou a ficar disponivel.`);
+    broadcastResources();
+  }, 8000);
 }
 
 function sendInventory(session: Session): void {
@@ -664,6 +750,17 @@ function bankErrorMessage(error: string | undefined): string {
       return "Quantidade invalida.";
     default:
       return "Operacao bancaria recusada.";
+  }
+}
+
+function resourceErrorMessage(error: string | undefined): string {
+  switch (error) {
+    case "out_of_range":
+      return "Recurso fora de alcance.";
+    case "depleted":
+      return "Recurso esgotado.";
+    default:
+      return "Coleta recusada.";
   }
 }
 

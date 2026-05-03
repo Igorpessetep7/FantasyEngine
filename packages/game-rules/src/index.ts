@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
+import type { Direction, EntitySnapshot, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -37,6 +37,19 @@ export function createNpc(id: string, name: string, x: number, y: number): Entit
     direction: "down",
     hp: 35,
     maxHp: 35,
+  };
+}
+
+export function createResource(id: string, kind: ResourceSnapshot["kind"], x: number, y: number): ResourceSnapshot {
+  return {
+    id,
+    kind,
+    name: kind === "tree" ? "Arvore" : "Veio de Ferro",
+    x,
+    y,
+    hp: kind === "tree" ? 3 : 4,
+    maxHp: kind === "tree" ? 3 : 4,
+    depleted: false,
   };
 }
 
@@ -107,6 +120,50 @@ export function canPickupItem(entity: EntitySnapshot, item: MapItemSnapshot): bo
   const distance = Math.abs(entity.x - item.x) + Math.abs(entity.y - item.y);
 
   return distance <= 1;
+}
+
+export interface ResourceGatherResult {
+  ok: boolean;
+  resource: ResourceSnapshot;
+  item?: ItemStack;
+  depleted: boolean;
+  error?: "out_of_range" | "depleted";
+}
+
+export function applyResourceGatherIntent(entity: EntitySnapshot, resource: ResourceSnapshot): ResourceGatherResult {
+  const distance = Math.abs(entity.x - resource.x) + Math.abs(entity.y - resource.y);
+
+  if (distance > 1) {
+    return {
+      ok: false,
+      resource,
+      depleted: resource.depleted,
+      error: "out_of_range",
+    };
+  }
+
+  if (resource.depleted || resource.hp <= 0) {
+    return {
+      ok: false,
+      resource,
+      depleted: true,
+      error: "depleted",
+    };
+  }
+
+  const nextHp = Math.max(0, resource.hp - 1);
+  const nextResource = {
+    ...resource,
+    hp: nextHp,
+    depleted: nextHp === 0,
+  };
+
+  return {
+    ok: true,
+    resource: nextResource,
+    item: resource.kind === "tree" ? { itemId: "wood-log", name: "Madeira", quantity: 1 } : { itemId: "iron-ore", name: "Minerio de Ferro", quantity: 1 },
+    depleted: nextResource.depleted,
+  };
 }
 
 export interface ProgressAward {
