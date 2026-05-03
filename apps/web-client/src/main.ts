@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type ClassId, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -13,6 +13,7 @@ const spellListElement = getElement("spell-list");
 const craftingListElement = getElement("crafting-list");
 const equipmentListElement = getElement("equipment-list");
 const statsListElement = getElement("stats-list");
+const classListElement = getElement("class-list");
 const levelLabelElement = getElement("level-label");
 const goldLabelElement = getElement("gold-label");
 const xpLabelElement = getElement("xp-label");
@@ -32,6 +33,8 @@ let bank: ItemStack[] = [];
 let equipment: EquipmentState = { weapon: null };
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let stats: PlayerStats = { strength: 1, intelligence: 1, vitality: 1, points: 0 };
+let playerClass: PlayerClass | null = null;
+let classOptions: PlayerClass[] = [];
 let shopOffers: ShopOffer[] = [];
 let quests: QuestState[] = [];
 let spells: SpellDefinition[] = [];
@@ -87,6 +90,8 @@ function connect(): void {
         equipment = message.equipment;
         progress = message.progress;
         stats = message.stats;
+        playerClass = message.playerClass;
+        classOptions = message.classOptions;
         shopOffers = message.shopOffers;
         quests = message.quests;
         spells = message.spells;
@@ -98,6 +103,7 @@ function connect(): void {
         drawInventory();
         drawBank();
         drawEquipment();
+        drawClass();
         drawStats();
         drawProgress();
         drawShop();
@@ -137,6 +143,12 @@ function connect(): void {
         return;
       case "player.stats":
         stats = message.stats;
+        drawStats();
+        return;
+      case "player.class":
+        playerClass = message.playerClass;
+        stats = message.stats;
+        drawClass();
         drawStats();
         return;
       case "shop.offers":
@@ -566,6 +578,35 @@ function drawEquipment(): void {
   equipmentListElement.appendChild(row);
 }
 
+function drawClass(): void {
+  classListElement.replaceChildren();
+
+  if (playerClass) {
+    const selected = document.createElement("div");
+    selected.className = "class-entry selected";
+    selected.textContent = `${playerClass.name}: ${playerClass.description}`;
+    classListElement.appendChild(selected);
+    return;
+  }
+
+  for (const option of classOptions) {
+    const row = document.createElement("div");
+    row.className = "class-entry";
+
+    const info = document.createElement("span");
+    info.textContent = `${option.name}: ${formatClassBonuses(option)}`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Escolher";
+    button.title = option.description;
+    button.addEventListener("click", () => chooseClass(option.classId));
+
+    row.append(info, button);
+    classListElement.appendChild(row);
+  }
+}
+
 function drawStats(): void {
   statsListElement.replaceChildren();
 
@@ -598,6 +639,16 @@ function drawStatRow(labelText: string, stat: StatName, value: number, detailTex
 function allocateStat(stat: StatName): void {
   sequence += 1;
   send({ type: "input.allocateStat", stat, sequence });
+}
+
+function chooseClass(classId: ClassId): void {
+  sequence += 1;
+  send({ type: "input.chooseClass", classId, sequence });
+}
+
+function formatClassBonuses(playerClassOption: PlayerClass): string {
+  const bonuses = playerClassOption.statBonuses;
+  return `Forca +${bonuses.strength}, Int +${bonuses.intelligence}, Vit +${bonuses.vitality}`;
 }
 
 function isEquippable(itemId: string): boolean {

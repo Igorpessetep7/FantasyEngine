@@ -66,6 +66,23 @@ export const PlayerStatsSchema = z.object({
 
 export type PlayerStats = z.infer<typeof PlayerStatsSchema>;
 
+export const ClassIdSchema = z.enum(["warrior", "mage", "ranger"]);
+
+export type ClassId = z.infer<typeof ClassIdSchema>;
+
+export const PlayerClassSchema = z.object({
+  classId: ClassIdSchema,
+  name: z.string(),
+  description: z.string(),
+  statBonuses: z.object({
+    strength: z.number().int().nonnegative(),
+    intelligence: z.number().int().nonnegative(),
+    vitality: z.number().int().nonnegative(),
+  }),
+});
+
+export type PlayerClass = z.infer<typeof PlayerClassSchema>;
+
 export const ShopOfferSchema = z.object({
   item: ItemStackSchema,
   priceGold: z.number().int().nonnegative(),
@@ -205,6 +222,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
+    type: z.literal("input.chooseClass"),
+    classId: ClassIdSchema,
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
     type: z.literal("chat.send"),
     text: z.string().trim().min(1).max(180),
   }),
@@ -258,6 +280,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     equipment: EquipmentStateSchema,
     progress: PlayerProgressSchema,
     stats: PlayerStatsSchema,
+    playerClass: PlayerClassSchema.nullable(),
+    classOptions: z.array(PlayerClassSchema),
     shopOffers: z.array(ShopOfferSchema),
     quests: z.array(QuestStateSchema),
     spells: z.array(SpellDefinitionSchema),
@@ -293,6 +317,11 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("player.stats"),
+    stats: PlayerStatsSchema,
+  }),
+  z.object({
+    type: z.literal("player.class"),
+    playerClass: PlayerClassSchema,
     stats: PlayerStatsSchema,
   }),
   z.object({

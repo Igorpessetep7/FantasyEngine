@@ -63,6 +63,7 @@ cp .env.example .env
 - Banco de itens persistente com deposito e saque validados pelo servidor.
 - XP, level e gold persistentes.
 - Atributos autoritativos com pontos por level up e bonus de combate validados no servidor.
+- Classes iniciais persistentes com escolha unica e bonus de atributos aplicados no servidor.
 - Shop com compras validadas pelo servidor.
 - Uso de pocao com cura e consumo validados pelo servidor.
 - Contra-ataque basico de NPCs e retorno ao ponto inicial ao cair.

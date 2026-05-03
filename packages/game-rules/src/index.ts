@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
+import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, PlayerClass, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -756,6 +756,88 @@ export function createInitialStats(): PlayerStats {
     intelligence: 1,
     vitality: 1,
     points: 0,
+  };
+}
+
+export const starterClasses: PlayerClass[] = [
+  {
+    classId: "warrior",
+    name: "Guerreiro",
+    description: "Linha de frente com mais forca e vitalidade.",
+    statBonuses: {
+      strength: 2,
+      intelligence: 0,
+      vitality: 1,
+    },
+  },
+  {
+    classId: "mage",
+    name: "Mago",
+    description: "Conjurador inicial com mais inteligencia.",
+    statBonuses: {
+      strength: 0,
+      intelligence: 3,
+      vitality: 0,
+    },
+  },
+  {
+    classId: "ranger",
+    name: "Arqueiro",
+    description: "Combatente flexivel com dano fisico e algum folego.",
+    statBonuses: {
+      strength: 1,
+      intelligence: 1,
+      vitality: 1,
+    },
+  },
+];
+
+export interface ClassChoiceResult {
+  ok: boolean;
+  entity: EntitySnapshot;
+  stats: PlayerStats;
+  playerClass?: PlayerClass;
+  error?: "already_chosen" | "unknown_class";
+}
+
+export function applyClassChoiceIntent(entity: EntitySnapshot, stats: PlayerStats, currentClass: PlayerClass | null, classId: ClassId): ClassChoiceResult {
+  if (currentClass) {
+    return {
+      ok: false,
+      entity,
+      stats: { ...stats },
+      error: "already_chosen",
+    };
+  }
+
+  const playerClass = starterClasses.find((candidate) => candidate.classId === classId);
+
+  if (!playerClass) {
+    return {
+      ok: false,
+      entity,
+      stats: { ...stats },
+      error: "unknown_class",
+    };
+  }
+
+  const nextStats: PlayerStats = {
+    ...stats,
+    strength: stats.strength + playerClass.statBonuses.strength,
+    intelligence: stats.intelligence + playerClass.statBonuses.intelligence,
+    vitality: stats.vitality + playerClass.statBonuses.vitality,
+  };
+  const vitalityHp = playerClass.statBonuses.vitality * 10;
+
+  return {
+    ok: true,
+    entity: {
+      ...entity,
+      hp: entity.hp + vitalityHp,
+      maxHp: entity.maxHp + vitalityHp,
+    },
+    stats: nextStats,
+    playerClass,
   };
 }
 

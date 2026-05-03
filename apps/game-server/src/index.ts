@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
-import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
+import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
 const port = Number(process.env.GAME_SERVER_PORT ?? 8787);
 const tickMs = 100;
@@ -18,6 +18,7 @@ const minBankMs = 250;
 const minCraftMs = 400;
 const minEquipmentMs = 300;
 const minStatMs = 250;
+const minClassMs = 500;
 
 interface Session {
   id: string;
@@ -29,6 +30,7 @@ interface Session {
   equipment: EquipmentState;
   progress: PlayerProgress;
   stats: PlayerStats;
+  playerClass: PlayerClass | null;
   quests: QuestState[];
   lastMoveAt: number;
   lastAttackAt: number;
@@ -40,6 +42,7 @@ interface Session {
   lastCraftAt: number;
   lastEquipmentAt: number;
   lastStatAt: number;
+  lastClassAt: number;
   lastSpellAt: Record<string, number>;
   lastSequence: number;
 }
@@ -83,6 +86,8 @@ webSocketServer.on("connection", (socket) => {
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    playerClass: session.playerClass,
+    classOptions: starterClasses,
     shopOffers: starterShopOffers,
     quests: session.quests,
     spells: starterSpells,
@@ -121,6 +126,7 @@ function createSession(socket: WebSocket): Session {
     equipment: createInitialEquipment(),
     progress: createInitialProgress(),
     stats: createInitialStats(),
+    playerClass: null,
     quests: createInitialQuests(),
     lastMoveAt: 0,
     lastAttackAt: 0,
@@ -132,6 +138,7 @@ function createSession(socket: WebSocket): Session {
     lastCraftAt: 0,
     lastEquipmentAt: 0,
     lastStatAt: 0,
+    lastClassAt: 0,
     lastSpellAt: {},
     lastSequence: 0,
   };
@@ -185,6 +192,9 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
       case "input.allocateStat":
         await handleAllocateStat(session, message.stat, message.sequence);
         return;
+      case "input.chooseClass":
+        await handleChooseClass(session, message.classId, message.sequence);
+        return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
         return;
@@ -208,6 +218,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    playerClass: session.playerClass,
     quests: session.quests,
   });
 
@@ -217,6 +228,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
   session.equipment = state.equipment;
   session.progress = state.progress;
   session.stats = state.stats;
+  session.playerClass = state.playerClass;
   session.quests = state.quests.length > 0 ? state.quests : createInitialQuests();
 
   send(session, {
@@ -231,6 +243,8 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    playerClass: session.playerClass,
+    classOptions: starterClasses,
     shopOffers: starterShopOffers,
     quests: session.quests,
     spells: starterSpells,
@@ -853,6 +867,49 @@ async function handleAllocateStat(session: Session, stat: StatName, sequence: nu
   broadcastChat("Atributos", `${session.player.name} aumentou ${stat}.`);
 }
 
+async function handleChooseClass(session: Session, classId: ClassId, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastClassAt < minClassMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_class",
+      message: "Classe enviada rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastClassAt = now;
+
+  const result = applyClassChoiceIntent(session.player, session.stats, session.playerClass, classId);
+
+  if (!result.ok || !result.playerClass) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "class_denied",
+      message: classChoiceErrorMessage(result.error),
+    });
+    return;
+  }
+
+  session.player = result.entity;
+  session.stats = result.stats;
+  session.playerClass = result.playerClass;
+  await saveSession(session);
+  send(session, {
+    type: "player.class",
+    playerClass: session.playerClass,
+    stats: session.stats,
+  });
+  broadcastEntities();
+  broadcastChat("Classes", `${session.player.name} escolheu ${session.playerClass.name}.`);
+}
+
 function sendProgress(session: Session): void {
   send(session, {
     type: "player.progress",
@@ -879,6 +936,7 @@ async function saveSession(session: Session): Promise<void> {
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    playerClass: session.playerClass,
     quests: session.quests,
   });
 }
@@ -993,6 +1051,17 @@ function equipmentErrorMessage(error: string | undefined): string {
       return "Slot vazio.";
     default:
       return "Equipment recusado.";
+  }
+}
+
+function classChoiceErrorMessage(error: string | undefined): string {
+  switch (error) {
+    case "already_chosen":
+      return "Classe ja escolhida para este personagem.";
+    case "unknown_class":
+      return "Classe indisponivel.";
+    default:
+      return "Escolha de classe recusada.";
   }
 }
 
