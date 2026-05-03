@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyTeleportIntent, applyTileAttributeEffect, applyUnequipItemIntent, awardEventProgress, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyTeleportIntent, applyTileAttributeEffect, applyUnequipItemIntent, awardEventProgress, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, respawnEntity, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerEventFlags, type PlayerEventVariables, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
@@ -127,7 +127,7 @@ function createSession(socket: WebSocket): Session {
   return {
     id,
     socket,
-    player: createPlayer(id, `Player-${id.slice(0, 4)}`),
+    player: createPlayer(id, `Player-${id.slice(0, 4)}`, starterMap),
     inventory: [],
     bank: [],
     equipment: createInitialEquipment(),
@@ -314,14 +314,9 @@ async function handleMove(session: Session, direction: EntitySnapshot["direction
       broadcastChat("Mapa", `${session.player.name} sofreu ${attribute.damage ?? 0} de dano em ${attribute.label ?? "um tile perigoso"}.`);
 
       if (session.player.hp === 0) {
-        session.player = {
-          ...session.player,
-          hp: session.player.maxHp,
-          x: 4,
-          y: 4,
-          direction: "down",
-        };
-        broadcastChat("Sistema", `${session.player.name} retornou ao ponto inicial.`);
+        const respawn = respawnEntity(session.player, starterMap);
+        session.player = respawn.entity;
+        broadcastChat("Sistema", `${session.player.name} retornou para ${respawn.label}.`);
       }
     }
   }
@@ -384,14 +379,9 @@ function applyNpcCounterAttack(session: Session, npc: EntitySnapshot): void {
   broadcastChat("Combate", `${npc.name} contra-atacou ${session.player.name} causando ${damage} de dano.`);
 
   if (session.player.hp === 0) {
-    session.player = {
-      ...session.player,
-      hp: session.player.maxHp,
-      x: 4,
-      y: 4,
-      direction: "down",
-    };
-    broadcastChat("Sistema", `${session.player.name} retornou ao ponto inicial.`);
+    const respawn = respawnEntity(session.player, starterMap);
+    session.player = respawn.entity;
+    broadcastChat("Sistema", `${session.player.name} retornou para ${respawn.label}.`);
   }
 
   void saveSession(session);

@@ -1,4 +1,4 @@
-import type { MapSnapshot, TileAttribute } from "@fantasy-engine/protocol";
+import type { Direction, MapSnapshot, TileAttribute } from "@fantasy-engine/protocol";
 
 const width = 24;
 const height = 16;
@@ -7,6 +7,10 @@ const size = width * height;
 const ground = Array.from({ length: size }, (_, index) => {
   const x = index % width;
   const y = Math.floor(index / width);
+
+  if (x === 4 && y === 4) {
+    return 6;
+  }
 
   if (x === 13 && y === 4) {
     return 4;
@@ -44,6 +48,14 @@ const objects = Array.from({ length: size }, (_, index) => {
 const attributes: TileAttribute[] = Array.from({ length: size }, (_, index) => {
   const x = index % width;
   const y = Math.floor(index / width);
+
+  if (x === 4 && y === 4) {
+    return {
+      kind: "spawn",
+      label: "Entrada do Campo",
+      direction: "down",
+    };
+  }
 
   if (x === 13 && y === 4) {
     return {
@@ -100,4 +112,21 @@ export function getTileAttribute(map: MapSnapshot, x: number, y: number): TileAt
   }
 
   return map.attributes[tileIndex(map, x, y)] ?? { kind: "none" };
+}
+
+export function findSpawnAttribute(map: MapSnapshot): { x: number; y: number; direction: Direction; label: string } {
+  for (let index = 0; index < map.attributes.length; index += 1) {
+    const attribute = map.attributes[index];
+
+    if (attribute?.kind === "spawn") {
+      return {
+        x: index % map.width,
+        y: Math.floor(index / map.width),
+        direction: attribute.direction,
+        label: attribute.label,
+      };
+    }
+  }
+
+  return { x: 1, y: 1, direction: "down", label: "Spawn Padrao" };
 }

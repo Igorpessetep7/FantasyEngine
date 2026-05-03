@@ -1,4 +1,4 @@
-import { getTileAttribute, isBlocked } from "@fantasy-engine/map-format";
+import { findSpawnAttribute, getTileAttribute, isBlocked } from "@fantasy-engine/map-format";
 import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDialogue, NpcDisposition, PlayerClass, PlayerEventFlags, PlayerEventVariables, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
@@ -27,6 +27,11 @@ export interface TileAttributeResult {
   error?: "blocked_destination";
 }
 
+export interface RespawnResult {
+  entity: EntitySnapshot;
+  label: string;
+}
+
 export interface AttackResult {
   hit: boolean;
   defeated: boolean;
@@ -35,18 +40,35 @@ export interface AttackResult {
   damage: number;
 }
 
-export function createPlayer(id: string, name: string): EntitySnapshot {
+export function createPlayer(id: string, name: string, map?: MapSnapshot): EntitySnapshot {
+  const spawn = map ? findSpawnAttribute(map) : { x: 4, y: 4, direction: "down" as const };
+
   return {
     id,
     kind: "player",
     npcDefinitionId: null,
     disposition: null,
     name,
-    x: 4,
-    y: 4,
-    direction: "down",
+    x: spawn.x,
+    y: spawn.y,
+    direction: spawn.direction,
     hp: 100,
     maxHp: 100,
+  };
+}
+
+export function respawnEntity(entity: EntitySnapshot, map: MapSnapshot): RespawnResult {
+  const spawn = findSpawnAttribute(map);
+
+  return {
+    entity: {
+      ...entity,
+      hp: entity.maxHp,
+      x: spawn.x,
+      y: spawn.y,
+      direction: spawn.direction,
+    },
+    label: spawn.label,
   };
 }
 
@@ -191,7 +213,7 @@ export function applyTeleportIntent(entity: EntitySnapshot, map: MapSnapshot, de
 export function applyTileAttributeEffect(entity: EntitySnapshot, map: MapSnapshot): TileAttributeResult {
   const attribute = getTileAttribute(map, entity.x, entity.y);
 
-  if (attribute.kind === "none") {
+  if (attribute.kind === "none" || attribute.kind === "spawn") {
     return {
       triggered: false,
       entity,

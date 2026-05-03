@@ -384,6 +384,8 @@ function tileColor(tile: number): number {
       return 0x4b78d8;
     case 5:
       return 0xb54747;
+    case 6:
+      return 0x5fc98f;
     default:
       return 0x2f7d4d;
   }
