@@ -6,6 +6,18 @@ export interface MoveResult {
   entity: EntitySnapshot;
 }
 
+export interface EventTeleportDestination {
+  x: number;
+  y: number;
+  direction: Direction;
+}
+
+export interface TeleportResult {
+  ok: boolean;
+  entity: EntitySnapshot;
+  error?: "blocked_destination";
+}
+
 export interface AttackResult {
   hit: boolean;
   defeated: boolean;
@@ -144,6 +156,26 @@ export function applyMoveIntent(entity: EntitySnapshot, direction: Direction, ma
   return {
     moved: true,
     entity: next,
+  };
+}
+
+export function applyTeleportIntent(entity: EntitySnapshot, map: MapSnapshot, destination: EventTeleportDestination): TeleportResult {
+  if (isBlocked(map, destination.x, destination.y)) {
+    return {
+      ok: false,
+      entity,
+      error: "blocked_destination",
+    };
+  }
+
+  return {
+    ok: true,
+    entity: {
+      ...entity,
+      x: destination.x,
+      y: destination.y,
+      direction: destination.direction,
+    },
   };
 }
 
@@ -334,6 +366,7 @@ export function createInitialQuests(): QuestState[] {
     },
   ];
 }
+
 
 export function applyQuestNpcDefeat(quests: QuestState[], npc: EntitySnapshot): { quests: QuestState[]; completed: QuestState[] } {
   const completed: QuestState[] = [];
@@ -1054,6 +1087,7 @@ export interface NpcDialogueOptionResult {
   rewards: ItemStack[];
   xpReward: number;
   goldReward: number;
+  teleport?: EventTeleportDestination;
   dialogue?: NpcDialogue;
   error?: "out_of_range" | "unknown_option" | "already_claimed" | "variable_limit" | "condition_not_met";
 }
@@ -1075,7 +1109,7 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
     };
   }
 
-  if (npc.npcDefinitionId !== "guide" || (optionId !== "guide-starter-kit" && optionId !== "guide-training-mark" && optionId !== "guide-complete-training")) {
+  if (npc.npcDefinitionId !== "guide" || (optionId !== "guide-starter-kit" && optionId !== "guide-training-mark" && optionId !== "guide-complete-training" && optionId !== "guide-training-ground")) {
     return {
       ok: false,
       eventFlags: nextFlags,
@@ -1084,6 +1118,36 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
       xpReward: 0,
       goldReward: 0,
       error: "unknown_option",
+    };
+  }
+
+  if (optionId === "guide-training-ground") {
+    if (!nextFlags["guide.trainingComplete"]) {
+      return {
+        ok: false,
+        eventFlags: nextFlags,
+        eventVariables: nextVariables,
+        rewards: [],
+        xpReward: 0,
+        goldReward: 0,
+        error: "condition_not_met",
+      };
+    }
+
+    return {
+      ok: true,
+      eventFlags: nextFlags,
+      eventVariables: nextVariables,
+      rewards: [],
+      xpReward: 0,
+      goldReward: 0,
+      teleport: { x: 12, y: 4, direction: "right" },
+      dialogue: {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: "Passagem aberta para o campo de prova.",
+        options: createDialogueOptions(npc, nextFlags, nextVariables),
+      },
     };
   }
 
@@ -1221,6 +1285,11 @@ function createDialogueOptions(npc: EntitySnapshot, eventFlags: PlayerEventFlags
       optionId: "guide-complete-training",
       label: trainingComplete ? "Treinamento concluido" : "Concluir treinamento",
       disabled: trainingMarks < 3 || trainingComplete,
+    },
+    {
+      optionId: "guide-training-ground",
+      label: "Ir ao campo de prova",
+      disabled: !trainingComplete,
     },
   ];
 }

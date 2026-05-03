@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardEventProgress, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyTeleportIntent, applyUnequipItemIntent, awardEventProgress, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerEventFlags, type PlayerEventVariables, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
@@ -1050,6 +1050,21 @@ async function handleChooseNpcDialogueOption(session: Session, npcId: string, op
     }
   }
 
+  if (result.teleport) {
+    const teleport = applyTeleportIntent(session.player, starterMap, result.teleport);
+
+    if (!teleport.ok) {
+      send(session, {
+        type: "server.error",
+        code: teleport.error ?? "teleport_denied",
+        message: "Destino de teleport invalido.",
+      });
+      return;
+    }
+
+    session.player = teleport.entity;
+  }
+
   await saveSession(session);
 
   if (result.rewards.length > 0) {
@@ -1066,6 +1081,9 @@ async function handleChooseNpcDialogueOption(session: Session, npcId: string, op
     type: "npc.dialogue",
     dialogue: result.dialogue,
   });
+  if (result.teleport) {
+    broadcastEntities();
+  }
   broadcastChat("Evento", eventOptionMessage(session.player.name, npc.name, optionId, result.xpReward, result.goldReward));
 }
 
@@ -1275,6 +1293,10 @@ function eventOptionMessage(playerName: string, npcName: string, optionId: strin
 
   if (optionId === "guide-complete-training") {
     return `${playerName} concluiu o treinamento de ${npcName} e recebeu ${xpReward} XP e ${goldReward} gold.`;
+  }
+
+  if (optionId === "guide-training-ground") {
+    return `${playerName} viajou para o campo de prova por ${npcName}.`;
   }
 
   return `${playerName} registrou treino com ${npcName}.`;

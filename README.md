@@ -59,6 +59,7 @@ cp .env.example .env
 - Opcoes de dialogo com flags persistentes e recompensa unica validada no servidor.
 - Variaveis de evento persistentes com contador numerico atualizado apenas pelo servidor.
 - Condicoes de evento por variavel com recompensa de XP/gold/item aplicada pelo servidor.
+- Teleport por evento com destino validado contra colisao no servidor.
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
 - Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.
