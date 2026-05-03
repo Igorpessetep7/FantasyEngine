@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardEventProgress, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerEventFlags, type PlayerEventVariables, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
@@ -1037,10 +1037,27 @@ async function handleChooseNpcDialogueOption(session: Session, npcId: string, op
     addInventoryItem(session.inventory, item);
   }
 
+  const previousLevel = session.progress.level;
+
+  if (result.xpReward > 0 || result.goldReward > 0) {
+    const award = awardEventProgress(session.progress, result.xpReward, result.goldReward);
+    session.progress = award.progress;
+
+    if (session.progress.level > previousLevel) {
+      session.stats = grantStatPoints(session.stats, session.progress.level - previousLevel);
+      sendStats(session);
+      broadcastChat("Progresso", `${session.player.name} recebeu pontos de atributo por subir de level.`);
+    }
+  }
+
   await saveSession(session);
 
   if (result.rewards.length > 0) {
     sendInventory(session);
+  }
+
+  if (result.xpReward > 0 || result.goldReward > 0) {
+    sendProgress(session);
   }
 
   sendEventFlags(session);
@@ -1049,7 +1066,7 @@ async function handleChooseNpcDialogueOption(session: Session, npcId: string, op
     type: "npc.dialogue",
     dialogue: result.dialogue,
   });
-  broadcastChat("Evento", result.rewards.length > 0 ? `${session.player.name} recebeu o kit inicial de ${npc.name}.` : `${session.player.name} registrou treino com ${npc.name}.`);
+  broadcastChat("Evento", eventOptionMessage(session.player.name, npc.name, optionId, result.xpReward, result.goldReward));
 }
 
 function sendProgress(session: Session): void {
@@ -1244,9 +1261,23 @@ function npcDialogueOptionErrorMessage(error: string | undefined): string {
       return "Opcao de dialogo indisponivel.";
     case "variable_limit":
       return "Variavel de evento atingiu o limite.";
+    case "condition_not_met":
+      return "Condicao do evento ainda nao foi cumprida.";
     default:
       return "Opcao de dialogo recusada.";
   }
+}
+
+function eventOptionMessage(playerName: string, npcName: string, optionId: string, xpReward: number, goldReward: number): string {
+  if (optionId === "guide-starter-kit") {
+    return `${playerName} recebeu o kit inicial de ${npcName}.`;
+  }
+
+  if (optionId === "guide-complete-training") {
+    return `${playerName} concluiu o treinamento de ${npcName} e recebeu ${xpReward} XP e ${goldReward} gold.`;
+  }
+
+  return `${playerName} registrou treino com ${npcName}.`;
 }
 
 function handleCastSpell(session: Session, spellId: string, sequence: number): void {

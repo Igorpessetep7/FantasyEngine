@@ -408,6 +408,17 @@ function addRewardProgress(progress: PlayerProgress, xpGained: number, goldGaine
   };
 }
 
+export function awardEventProgress(progress: PlayerProgress, xpGained: number, goldGained: number): ProgressAward {
+  const nextProgress = addRewardProgress(progress, xpGained, goldGained);
+
+  return {
+    progress: nextProgress,
+    leveledUp: nextProgress.level > progress.level,
+    xpGained,
+    goldGained,
+  };
+}
+
 export interface PurchaseResult {
   ok: boolean;
   progress: PlayerProgress;
@@ -1041,8 +1052,10 @@ export interface NpcDialogueOptionResult {
   eventFlags: PlayerEventFlags;
   eventVariables: PlayerEventVariables;
   rewards: ItemStack[];
+  xpReward: number;
+  goldReward: number;
   dialogue?: NpcDialogue;
-  error?: "out_of_range" | "unknown_option" | "already_claimed" | "variable_limit";
+  error?: "out_of_range" | "unknown_option" | "already_claimed" | "variable_limit" | "condition_not_met";
 }
 
 export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: EntitySnapshot, eventFlags: PlayerEventFlags, eventVariables: PlayerEventVariables, optionId: string): NpcDialogueOptionResult {
@@ -1056,17 +1069,66 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
       eventFlags: nextFlags,
       eventVariables: nextVariables,
       rewards: [],
+      xpReward: 0,
+      goldReward: 0,
       error: "out_of_range",
     };
   }
 
-  if (npc.npcDefinitionId !== "guide" || (optionId !== "guide-starter-kit" && optionId !== "guide-training-mark")) {
+  if (npc.npcDefinitionId !== "guide" || (optionId !== "guide-starter-kit" && optionId !== "guide-training-mark" && optionId !== "guide-complete-training")) {
     return {
       ok: false,
       eventFlags: nextFlags,
       eventVariables: nextVariables,
       rewards: [],
+      xpReward: 0,
+      goldReward: 0,
       error: "unknown_option",
+    };
+  }
+
+  if (optionId === "guide-complete-training") {
+    const currentMarks = nextVariables["guide.trainingMarks"] ?? 0;
+
+    if (nextFlags["guide.trainingComplete"]) {
+      return {
+        ok: false,
+        eventFlags: nextFlags,
+        eventVariables: nextVariables,
+        rewards: [],
+        xpReward: 0,
+        goldReward: 0,
+        error: "already_claimed",
+      };
+    }
+
+    if (currentMarks < 3) {
+      return {
+        ok: false,
+        eventFlags: nextFlags,
+        eventVariables: nextVariables,
+        rewards: [],
+        xpReward: 0,
+        goldReward: 0,
+        error: "condition_not_met",
+      };
+    }
+
+    nextFlags["guide.trainingComplete"] = true;
+
+    return {
+      ok: true,
+      eventFlags: nextFlags,
+      eventVariables: nextVariables,
+      rewards: [{ itemId: "wood-log", name: "Madeira", quantity: 2 }],
+      xpReward: 20,
+      goldReward: 5,
+      dialogue: {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: "Treinamento concluido. Receba sua recompensa e continue evoluindo.",
+        options: createDialogueOptions(npc, nextFlags, nextVariables),
+      },
     };
   }
 
@@ -1079,6 +1141,8 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
         eventFlags: nextFlags,
         eventVariables: nextVariables,
         rewards: [],
+        xpReward: 0,
+        goldReward: 0,
         error: "variable_limit",
       };
     }
@@ -1090,6 +1154,8 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
       eventFlags: nextFlags,
       eventVariables: nextVariables,
       rewards: [],
+      xpReward: 0,
+      goldReward: 0,
       dialogue: {
         npcId: npc.id,
         npcName: npc.name,
@@ -1105,6 +1171,8 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
       eventFlags: nextFlags,
       eventVariables: nextVariables,
       rewards: [],
+      xpReward: 0,
+      goldReward: 0,
       error: "already_claimed",
     };
   }
@@ -1119,6 +1187,8 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
       { itemId: "small-potion", name: "Pocao Pequena", quantity: 2 },
       { itemId: "training-scroll", name: "Pergaminho de Treino", quantity: 1 },
     ],
+    xpReward: 0,
+    goldReward: 0,
     dialogue: {
       npcId: npc.id,
       npcName: npc.name,
@@ -1134,6 +1204,7 @@ function createDialogueOptions(npc: EntitySnapshot, eventFlags: PlayerEventFlags
   }
 
   const trainingMarks = eventVariables["guide.trainingMarks"] ?? 0;
+  const trainingComplete = eventFlags["guide.trainingComplete"] === true;
 
   return [
     {
@@ -1145,6 +1216,11 @@ function createDialogueOptions(npc: EntitySnapshot, eventFlags: PlayerEventFlags
       optionId: "guide-training-mark",
       label: trainingMarks >= 3 ? "Treino registrado 3/3" : `Registrar treino (${trainingMarks}/3)`,
       disabled: trainingMarks >= 3,
+    },
+    {
+      optionId: "guide-complete-training",
+      label: trainingComplete ? "Treinamento concluido" : "Concluir treinamento",
+      disabled: trainingMarks < 3 || trainingComplete,
     },
   ];
 }
