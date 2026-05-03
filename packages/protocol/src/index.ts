@@ -22,10 +22,23 @@ export type ItemStack = z.infer<typeof ItemStackSchema>;
 
 export const ItemQuantitySchema = z.number().int().positive().max(9999);
 
+export const PlayerEventFlagsSchema = z.record(z.string(), z.boolean());
+
+export type PlayerEventFlags = z.infer<typeof PlayerEventFlagsSchema>;
+
+export const NpcDialogueOptionSchema = z.object({
+  optionId: z.string(),
+  label: z.string(),
+  disabled: z.boolean(),
+});
+
+export type NpcDialogueOption = z.infer<typeof NpcDialogueOptionSchema>;
+
 export const NpcDialogueSchema = z.object({
   npcId: z.string(),
   npcName: z.string(),
   text: z.string(),
+  options: z.array(NpcDialogueOptionSchema),
 });
 
 export type NpcDialogue = z.infer<typeof NpcDialogueSchema>;
@@ -244,6 +257,12 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
+    type: z.literal("input.chooseNpcDialogueOption"),
+    npcId: z.string().min(1).max(80),
+    optionId: z.string().min(1).max(80),
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
     type: z.literal("chat.send"),
     text: z.string().trim().min(1).max(180),
   }),
@@ -299,6 +318,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     equipment: EquipmentStateSchema,
     progress: PlayerProgressSchema,
     stats: PlayerStatsSchema,
+    eventFlags: PlayerEventFlagsSchema,
     playerClass: PlayerClassSchema.nullable(),
     classOptions: z.array(PlayerClassSchema),
     shopOffers: z.array(ShopOfferSchema),
@@ -337,6 +357,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("player.stats"),
     stats: PlayerStatsSchema,
+  }),
+  z.object({
+    type: z.literal("player.eventFlags"),
+    eventFlags: PlayerEventFlagsSchema,
   }),
   z.object({
     type: z.literal("player.class"),

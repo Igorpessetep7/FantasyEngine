@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type ClassId, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type NpcDialogue, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type ClassId, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type NpcDialogue, type PlayerClass, type PlayerEventFlags, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -34,6 +34,7 @@ let bank: ItemStack[] = [];
 let equipment: EquipmentState = { weapon: null };
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let stats: PlayerStats = { strength: 1, intelligence: 1, vitality: 1, points: 0 };
+let eventFlags: PlayerEventFlags = {};
 let playerClass: PlayerClass | null = null;
 let classOptions: PlayerClass[] = [];
 let currentDialogue: NpcDialogue | undefined;
@@ -92,6 +93,7 @@ function connect(): void {
         equipment = message.equipment;
         progress = message.progress;
         stats = message.stats;
+        eventFlags = message.eventFlags;
         playerClass = message.playerClass;
         classOptions = message.classOptions;
         shopOffers = message.shopOffers;
@@ -147,6 +149,10 @@ function connect(): void {
       case "player.stats":
         stats = message.stats;
         drawStats();
+        return;
+      case "player.eventFlags":
+        eventFlags = message.eventFlags;
+        drawDialogue();
         return;
       case "player.class":
         playerClass = message.playerClass;
@@ -511,7 +517,26 @@ function drawDialogue(): void {
   text.textContent = currentDialogue.text;
 
   entry.append(speaker, text);
+
+  for (const option of currentDialogue.options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = option.label;
+    button.disabled = option.disabled || eventFlags["guide.starterKitClaimed"] === true;
+    button.addEventListener("click", () => chooseNpcDialogueOption(currentDialogue?.npcId, option.optionId));
+    entry.appendChild(button);
+  }
+
   dialogueListElement.appendChild(entry);
+}
+
+function chooseNpcDialogueOption(npcId: string | undefined, optionId: string): void {
+  if (!npcId) {
+    return;
+  }
+
+  sequence += 1;
+  send({ type: "input.chooseNpcDialogueOption", npcId, optionId, sequence });
 }
 
 function pickupNearestItem(): void {

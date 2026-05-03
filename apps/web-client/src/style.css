@@ -201,6 +201,21 @@ canvas {
   line-height: 1.35;
 }
 
+.dialogue-entry button {
+  justify-self: start;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #0c120f;
+  background: #f0c35b;
+  cursor: pointer;
+}
+
+.dialogue-entry button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .class-entry.selected {
   display: block;
   color: #d8ecdf;

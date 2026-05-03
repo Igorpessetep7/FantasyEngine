@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
-import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
+import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerEventFlags, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
 const port = Number(process.env.GAME_SERVER_PORT ?? 8787);
 const tickMs = 100;
@@ -31,6 +31,7 @@ interface Session {
   equipment: EquipmentState;
   progress: PlayerProgress;
   stats: PlayerStats;
+  eventFlags: PlayerEventFlags;
   playerClass: PlayerClass | null;
   quests: QuestState[];
   lastMoveAt: number;
@@ -89,6 +90,7 @@ webSocketServer.on("connection", (socket) => {
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    eventFlags: session.eventFlags,
     playerClass: session.playerClass,
     classOptions: starterClasses,
     shopOffers: starterShopOffers,
@@ -129,6 +131,7 @@ function createSession(socket: WebSocket): Session {
     equipment: createInitialEquipment(),
     progress: createInitialProgress(),
     stats: createInitialStats(),
+    eventFlags: createInitialEventFlags(),
     playerClass: null,
     quests: createInitialQuests(),
     lastMoveAt: 0,
@@ -202,6 +205,9 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
       case "input.interactNpc":
         handleInteractNpc(session, message.npcId, message.sequence);
         return;
+      case "input.chooseNpcDialogueOption":
+        void handleChooseNpcDialogueOption(session, message.npcId, message.optionId, message.sequence);
+        return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
         return;
@@ -225,6 +231,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    eventFlags: session.eventFlags,
     playerClass: session.playerClass,
     quests: session.quests,
   });
@@ -235,6 +242,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
   session.equipment = state.equipment;
   session.progress = state.progress;
   session.stats = state.stats;
+  session.eventFlags = state.eventFlags;
   session.playerClass = state.playerClass;
   session.quests = state.quests.length > 0 ? state.quests : createInitialQuests();
 
@@ -250,6 +258,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    eventFlags: session.eventFlags,
     playerClass: session.playerClass,
     classOptions: starterClasses,
     shopOffers: starterShopOffers,
@@ -957,7 +966,7 @@ function handleInteractNpc(session: Session, npcId: string, sequence: number): v
     return;
   }
 
-  const result = applyNpcInteractionIntent(session.player, npc);
+  const result = applyNpcInteractionIntent(session.player, npc, session.eventFlags);
 
   if (!result.ok || !result.dialogue) {
     send(session, {
@@ -974,6 +983,63 @@ function handleInteractNpc(session: Session, npcId: string, sequence: number): v
   });
 }
 
+async function handleChooseNpcDialogueOption(session: Session, npcId: string, optionId: string, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastInteractAt < minInteractMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_interact",
+      message: "Interacao enviada rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastInteractAt = now;
+
+  const npc = npcs.get(npcId);
+
+  if (!npc || npc.hp <= 0) {
+    send(session, {
+      type: "server.error",
+      code: "unknown_npc",
+      message: "NPC indisponivel.",
+    });
+    return;
+  }
+
+  const result = applyNpcDialogueOptionIntent(session.player, npc, session.eventFlags, optionId);
+
+  if (!result.ok || !result.dialogue) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "dialogue_option_denied",
+      message: npcDialogueOptionErrorMessage(result.error),
+    });
+    return;
+  }
+
+  session.eventFlags = result.eventFlags;
+
+  for (const item of result.rewards) {
+    addInventoryItem(session.inventory, item);
+  }
+
+  await saveSession(session);
+  sendInventory(session);
+  sendEventFlags(session);
+  send(session, {
+    type: "npc.dialogue",
+    dialogue: result.dialogue,
+  });
+  broadcastChat("Evento", `${session.player.name} recebeu o kit inicial de ${npc.name}.`);
+}
+
 function sendProgress(session: Session): void {
   send(session, {
     type: "player.progress",
@@ -985,6 +1051,13 @@ function sendStats(session: Session): void {
   send(session, {
     type: "player.stats",
     stats: session.stats,
+  });
+}
+
+function sendEventFlags(session: Session): void {
+  send(session, {
+    type: "player.eventFlags",
+    eventFlags: session.eventFlags,
   });
 }
 
@@ -1000,6 +1073,7 @@ async function saveSession(session: Session): Promise<void> {
     equipment: session.equipment,
     progress: session.progress,
     stats: session.stats,
+    eventFlags: session.eventFlags,
     playerClass: session.playerClass,
     quests: session.quests,
   });
@@ -1137,6 +1211,19 @@ function npcInteractionErrorMessage(error: string | undefined): string {
       return "Este NPC nao possui dialogo.";
     default:
       return "Interacao recusada.";
+  }
+}
+
+function npcDialogueOptionErrorMessage(error: string | undefined): string {
+  switch (error) {
+    case "out_of_range":
+      return "NPC fora de alcance.";
+    case "already_claimed":
+      return "Recompensa ja recebida.";
+    case "unknown_option":
+      return "Opcao de dialogo indisponivel.";
+    default:
+      return "Opcao de dialogo recusada.";
   }
 }
 

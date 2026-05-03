@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDialogue, NpcDisposition, PlayerClass, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
+import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDialogue, NpcDisposition, PlayerClass, PlayerEventFlags, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -115,6 +115,10 @@ export function createInitialEquipment(): EquipmentState {
   return {
     weapon: null,
   };
+}
+
+export function createInitialEventFlags(): PlayerEventFlags {
+  return {};
 }
 
 export function applyMoveIntent(entity: EntitySnapshot, direction: Direction, map: MapSnapshot): MoveResult {
@@ -997,7 +1001,7 @@ export interface NpcInteractionResult {
   error?: "out_of_range" | "not_interactive";
 }
 
-export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySnapshot): NpcInteractionResult {
+export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySnapshot, eventFlags: PlayerEventFlags = {}): NpcInteractionResult {
   const distance = Math.abs(entity.x - npc.x) + Math.abs(entity.y - npc.y);
 
   if (distance > 1) {
@@ -1023,6 +1027,78 @@ export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySna
       npcId: npc.id,
       npcName: npc.name,
       text,
+      options: createDialogueOptions(npc, eventFlags),
     },
   };
+}
+
+export interface NpcDialogueOptionResult {
+  ok: boolean;
+  eventFlags: PlayerEventFlags;
+  rewards: ItemStack[];
+  dialogue?: NpcDialogue;
+  error?: "out_of_range" | "unknown_option" | "already_claimed";
+}
+
+export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: EntitySnapshot, eventFlags: PlayerEventFlags, optionId: string): NpcDialogueOptionResult {
+  const distance = Math.abs(entity.x - npc.x) + Math.abs(entity.y - npc.y);
+  const nextFlags = { ...eventFlags };
+
+  if (distance > 1) {
+    return {
+      ok: false,
+      eventFlags: nextFlags,
+      rewards: [],
+      error: "out_of_range",
+    };
+  }
+
+  if (npc.npcDefinitionId !== "guide" || optionId !== "guide-starter-kit") {
+    return {
+      ok: false,
+      eventFlags: nextFlags,
+      rewards: [],
+      error: "unknown_option",
+    };
+  }
+
+  if (nextFlags["guide.starterKitClaimed"]) {
+    return {
+      ok: false,
+      eventFlags: nextFlags,
+      rewards: [],
+      error: "already_claimed",
+    };
+  }
+
+  nextFlags["guide.starterKitClaimed"] = true;
+
+  return {
+    ok: true,
+    eventFlags: nextFlags,
+    rewards: [
+      { itemId: "small-potion", name: "Pocao Pequena", quantity: 2 },
+      { itemId: "training-scroll", name: "Pergaminho de Treino", quantity: 1 },
+    ],
+    dialogue: {
+      npcId: npc.id,
+      npcName: npc.name,
+      text: "Aqui esta um kit inicial. Use com cuidado e continue treinando.",
+      options: createDialogueOptions(npc, nextFlags),
+    },
+  };
+}
+
+function createDialogueOptions(npc: EntitySnapshot, eventFlags: PlayerEventFlags): NpcDialogue["options"] {
+  if (npc.npcDefinitionId !== "guide") {
+    return [];
+  }
+
+  return [
+    {
+      optionId: "guide-starter-kit",
+      label: eventFlags["guide.starterKitClaimed"] ? "Kit inicial ja recebido" : "Receber kit inicial",
+      disabled: eventFlags["guide.starterKitClaimed"] === true,
+    },
+  ];
 }
