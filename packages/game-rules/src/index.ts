@@ -1,4 +1,4 @@
-import { isBlocked } from "@fantasy-engine/map-format";
+import { getTileAttribute, isBlocked } from "@fantasy-engine/map-format";
 import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDialogue, NpcDisposition, PlayerClass, PlayerEventFlags, PlayerEventVariables, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
@@ -15,6 +15,14 @@ export interface EventTeleportDestination {
 export interface TeleportResult {
   ok: boolean;
   entity: EntitySnapshot;
+  error?: "blocked_destination";
+}
+
+export interface TileAttributeResult {
+  triggered: boolean;
+  entity: EntitySnapshot;
+  attributeKind?: "warp";
+  label?: string;
   error?: "blocked_destination";
 }
 
@@ -176,6 +184,36 @@ export function applyTeleportIntent(entity: EntitySnapshot, map: MapSnapshot, de
       y: destination.y,
       direction: destination.direction,
     },
+  };
+}
+
+export function applyTileAttributeEffect(entity: EntitySnapshot, map: MapSnapshot): TileAttributeResult {
+  const attribute = getTileAttribute(map, entity.x, entity.y);
+
+  if (attribute.kind !== "warp") {
+    return {
+      triggered: false,
+      entity,
+    };
+  }
+
+  const teleport = applyTeleportIntent(entity, map, attribute.target);
+
+  if (!teleport.ok) {
+    return {
+      triggered: true,
+      entity,
+      attributeKind: "warp",
+      label: attribute.label,
+      error: "blocked_destination",
+    };
+  }
+
+  return {
+    triggered: true,
+    entity: teleport.entity,
+    attributeKind: "warp",
+    label: attribute.label,
   };
 }
 

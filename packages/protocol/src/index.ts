@@ -297,6 +297,23 @@ export const TileLayerSchema = z.object({
 
 export type TileLayer = z.infer<typeof TileLayerSchema>;
 
+export const TileAttributeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("none"),
+  }),
+  z.object({
+    kind: z.literal("warp"),
+    label: z.string().min(1).max(80),
+    target: z.object({
+      x: z.number().int(),
+      y: z.number().int(),
+      direction: DirectionSchema,
+    }),
+  }),
+]);
+
+export type TileAttribute = z.infer<typeof TileAttributeSchema>;
+
 export const MapSnapshotSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -305,6 +322,7 @@ export const MapSnapshotSchema = z.object({
   tileSize: z.number().int().positive(),
   layers: z.array(TileLayerSchema),
   blocked: z.array(z.boolean()),
+  attributes: z.array(TileAttributeSchema),
 });
 
 export type MapSnapshot = z.infer<typeof MapSnapshotSchema>;

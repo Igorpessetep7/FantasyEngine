@@ -1,4 +1,4 @@
-import type { MapSnapshot } from "@fantasy-engine/protocol";
+import type { MapSnapshot, TileAttribute } from "@fantasy-engine/protocol";
 
 const width = 24;
 const height = 16;
@@ -7,6 +7,10 @@ const size = width * height;
 const ground = Array.from({ length: size }, (_, index) => {
   const x = index % width;
   const y = Math.floor(index / width);
+
+  if (x === 13 && y === 4) {
+    return 4;
+  }
 
   if (x === 0 || y === 0 || x === width - 1 || y === height - 1) {
     return 2;
@@ -33,6 +37,21 @@ const objects = Array.from({ length: size }, (_, index) => {
   return x === 10 && y > 3 && y < 12 ? 3 : 0;
 });
 
+const attributes: TileAttribute[] = Array.from({ length: size }, (_, index) => {
+  const x = index % width;
+  const y = Math.floor(index / width);
+
+  if (x === 13 && y === 4) {
+    return {
+      kind: "warp",
+      label: "Retorno ao Guia",
+      target: { x: 6, y: 5, direction: "left" },
+    };
+  }
+
+  return { kind: "none" };
+});
+
 export const starterMap: MapSnapshot = {
   id: "starter-field",
   name: "Campo Inicial",
@@ -44,6 +63,7 @@ export const starterMap: MapSnapshot = {
     { id: "objects", name: "Objects", tiles: objects },
   ],
   blocked,
+  attributes,
 };
 
 export function tileIndex(map: MapSnapshot, x: number, y: number): number {
@@ -60,4 +80,12 @@ export function isBlocked(map: MapSnapshot, x: number, y: number): boolean {
   }
 
   return map.blocked[tileIndex(map, x, y)] ?? true;
+}
+
+export function getTileAttribute(map: MapSnapshot, x: number, y: number): TileAttribute {
+  if (!isInsideMap(map, x, y)) {
+    return { kind: "none" };
+  }
+
+  return map.attributes[tileIndex(map, x, y)] ?? { kind: "none" };
 }
