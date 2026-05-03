@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition } from "@fantasy-engine/protocol";
+import type { CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -713,7 +713,7 @@ export const starterSpells: SpellDefinition[] = [
   },
 ];
 
-export function applySpellCastIntent(attacker: EntitySnapshot, spellId: string, targets: EntitySnapshot[], map: MapSnapshot): SpellCastResult | undefined {
+export function applySpellCastIntent(attacker: EntitySnapshot, spellId: string, targets: EntitySnapshot[], map: MapSnapshot, damageBonus = 0): SpellCastResult | undefined {
   const spell = starterSpells.find((candidate) => candidate.spellId === spellId);
 
   if (!spell) {
@@ -735,17 +735,83 @@ export function applySpellCastIntent(attacker: EntitySnapshot, spellId: string, 
     if (target) {
       const nextTarget = {
         ...target,
-        hp: Math.max(0, target.hp - spell.damage),
+        hp: Math.max(0, target.hp - spell.damage - damageBonus),
       };
 
       return {
         spell,
         target: nextTarget,
-        damage: spell.damage,
+        damage: spell.damage + damageBonus,
         defeated: nextTarget.hp === 0,
       };
     }
   }
 
   return undefined;
+}
+
+export function createInitialStats(): PlayerStats {
+  return {
+    strength: 1,
+    intelligence: 1,
+    vitality: 1,
+    points: 0,
+  };
+}
+
+export interface StatAllocationResult {
+  ok: boolean;
+  entity: EntitySnapshot;
+  stats: PlayerStats;
+  error?: "no_points";
+}
+
+export function applyStatAllocationIntent(entity: EntitySnapshot, stats: PlayerStats, stat: StatName): StatAllocationResult {
+  if (stats.points <= 0) {
+    return {
+      ok: false,
+      entity,
+      stats: { ...stats },
+      error: "no_points",
+    };
+  }
+
+  const nextStats = {
+    ...stats,
+    [stat]: stats[stat] + 1,
+    points: stats.points - 1,
+  };
+
+  if (stat !== "vitality") {
+    return {
+      ok: true,
+      entity,
+      stats: nextStats,
+    };
+  }
+
+  return {
+    ok: true,
+    entity: {
+      ...entity,
+      hp: entity.hp + 10,
+      maxHp: entity.maxHp + 10,
+    },
+    stats: nextStats,
+  };
+}
+
+export function grantStatPoints(stats: PlayerStats, levelsGained: number): PlayerStats {
+  return {
+    ...stats,
+    points: stats.points + Math.max(0, levelsGained) * 3,
+  };
+}
+
+export function getStatsAttackBonus(stats: PlayerStats): number {
+  return stats.strength * 2;
+}
+
+export function getStatsSpellDamageBonus(stats: PlayerStats): number {
+  return stats.intelligence * 2;
 }

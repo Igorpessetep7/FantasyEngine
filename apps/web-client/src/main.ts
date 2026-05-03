@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -12,6 +12,7 @@ const questListElement = getElement("quest-list");
 const spellListElement = getElement("spell-list");
 const craftingListElement = getElement("crafting-list");
 const equipmentListElement = getElement("equipment-list");
+const statsListElement = getElement("stats-list");
 const levelLabelElement = getElement("level-label");
 const goldLabelElement = getElement("gold-label");
 const xpLabelElement = getElement("xp-label");
@@ -30,6 +31,7 @@ let inventory: ItemStack[] = [];
 let bank: ItemStack[] = [];
 let equipment: EquipmentState = { weapon: null };
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
+let stats: PlayerStats = { strength: 1, intelligence: 1, vitality: 1, points: 0 };
 let shopOffers: ShopOffer[] = [];
 let quests: QuestState[] = [];
 let spells: SpellDefinition[] = [];
@@ -84,6 +86,7 @@ function connect(): void {
         bank = message.bank;
         equipment = message.equipment;
         progress = message.progress;
+        stats = message.stats;
         shopOffers = message.shopOffers;
         quests = message.quests;
         spells = message.spells;
@@ -95,6 +98,7 @@ function connect(): void {
         drawInventory();
         drawBank();
         drawEquipment();
+        drawStats();
         drawProgress();
         drawShop();
         drawQuests();
@@ -130,6 +134,10 @@ function connect(): void {
         progress = message.progress;
         drawProgress();
         drawShop();
+        return;
+      case "player.stats":
+        stats = message.stats;
+        drawStats();
         return;
       case "shop.offers":
         shopOffers = message.shopOffers;
@@ -556,6 +564,40 @@ function drawEquipment(): void {
   }
 
   equipmentListElement.appendChild(row);
+}
+
+function drawStats(): void {
+  statsListElement.replaceChildren();
+
+  const points = document.createElement("div");
+  points.textContent = `Pontos: ${stats.points}`;
+  statsListElement.appendChild(points);
+
+  drawStatRow("Forca", "strength", stats.strength, `+${stats.strength * 2} dano fisico`);
+  drawStatRow("Inteligencia", "intelligence", stats.intelligence, `+${stats.intelligence * 2} dano spell`);
+  drawStatRow("Vitalidade", "vitality", stats.vitality, `${100 + (stats.vitality - 1) * 10} HP base`);
+}
+
+function drawStatRow(labelText: string, stat: StatName, value: number, detailText: string): void {
+  const row = document.createElement("div");
+  row.className = "stat-row";
+
+  const label = document.createElement("span");
+  label.textContent = `${labelText}: ${value} (${detailText})`;
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "+";
+  button.disabled = stats.points <= 0;
+  button.addEventListener("click", () => allocateStat(stat));
+
+  row.append(label, button);
+  statsListElement.appendChild(row);
+}
+
+function allocateStat(stat: StatName): void {
+  sequence += 1;
+  send({ type: "input.allocateStat", stat, sequence });
 }
 
 function isEquippable(itemId: string): boolean {

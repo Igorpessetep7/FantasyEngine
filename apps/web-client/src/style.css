@@ -126,6 +126,7 @@ canvas {
 #bank-list,
 #crafting-list,
 #equipment-list,
+#stats-list,
 #shop-list,
 #quest-list,
 #spell-list {
@@ -158,6 +159,24 @@ canvas {
 .shop-offer button {
   border: 0;
   border-radius: 6px;
+.stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.stat-row button {
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: #0c120f;
+  background: #77d69a;
+  cursor: pointer;
+}
+.stat-row button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
   padding: 6px 8px;
   color: #0c120f;
   background: #f0c35b;

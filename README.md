@@ -62,6 +62,7 @@ cp .env.example .env
 - Equipment/paperdoll inicial com arma equipada persistente e bonus de dano calculado no servidor.
 - Banco de itens persistente com deposito e saque validados pelo servidor.
 - XP, level e gold persistentes.
+- Atributos autoritativos com pontos por level up e bonus de combate validados no servidor.
 - Shop com compras validadas pelo servidor.
 - Uso de pocao com cura e consumo validados pelo servidor.
 - Contra-ataque basico de NPCs e retorno ao ponto inicial ao cair.

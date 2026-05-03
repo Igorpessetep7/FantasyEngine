@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createNpc, createPlayer, createResource, getEquipmentAttackBonus, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
-import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ResourceSnapshot, type ServerMessage } from "@fantasy-engine/protocol";
+import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
 const port = Number(process.env.GAME_SERVER_PORT ?? 8787);
 const tickMs = 100;
@@ -17,6 +17,7 @@ const minUseItemMs = 350;
 const minBankMs = 250;
 const minCraftMs = 400;
 const minEquipmentMs = 300;
+const minStatMs = 250;
 
 interface Session {
   id: string;
@@ -27,6 +28,7 @@ interface Session {
   bank: ItemStack[];
   equipment: EquipmentState;
   progress: PlayerProgress;
+  stats: PlayerStats;
   quests: QuestState[];
   lastMoveAt: number;
   lastAttackAt: number;
@@ -37,6 +39,7 @@ interface Session {
   lastBankAt: number;
   lastCraftAt: number;
   lastEquipmentAt: number;
+  lastStatAt: number;
   lastSpellAt: Record<string, number>;
   lastSequence: number;
 }
@@ -79,6 +82,7 @@ webSocketServer.on("connection", (socket) => {
     bank: session.bank,
     equipment: session.equipment,
     progress: session.progress,
+    stats: session.stats,
     shopOffers: starterShopOffers,
     quests: session.quests,
     spells: starterSpells,
@@ -116,6 +120,7 @@ function createSession(socket: WebSocket): Session {
     bank: [],
     equipment: createInitialEquipment(),
     progress: createInitialProgress(),
+    stats: createInitialStats(),
     quests: createInitialQuests(),
     lastMoveAt: 0,
     lastAttackAt: 0,
@@ -126,6 +131,7 @@ function createSession(socket: WebSocket): Session {
     lastBankAt: 0,
     lastCraftAt: 0,
     lastEquipmentAt: 0,
+    lastStatAt: 0,
     lastSpellAt: {},
     lastSequence: 0,
   };
@@ -176,6 +182,9 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
       case "input.unequipItem":
         await handleUnequipItem(session, message.slot, message.sequence);
         return;
+      case "input.allocateStat":
+        await handleAllocateStat(session, message.stat, message.sequence);
+        return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
         return;
@@ -198,6 +207,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     bank: session.bank,
     equipment: session.equipment,
     progress: session.progress,
+    stats: session.stats,
     quests: session.quests,
   });
 
@@ -206,6 +216,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
   session.bank = state.bank;
   session.equipment = state.equipment;
   session.progress = state.progress;
+  session.stats = state.stats;
   session.quests = state.quests.length > 0 ? state.quests : createInitialQuests();
 
   send(session, {
@@ -219,6 +230,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     bank: session.bank,
     equipment: session.equipment,
     progress: session.progress,
+    stats: session.stats,
     shopOffers: starterShopOffers,
     quests: session.quests,
     spells: starterSpells,
@@ -269,7 +281,7 @@ function handleAttack(session: Session, sequence: number): void {
   session.lastSequence = sequence;
   session.lastAttackAt = now;
 
-  const result = applyAttackIntent(session.player, [...npcs.values()], getEquipmentAttackBonus(session.equipment));
+  const result = applyAttackIntent(session.player, [...npcs.values()], getEquipmentAttackBonus(session.equipment) + getStatsAttackBonus(session.stats));
 
   if (!result) {
     return;
@@ -803,10 +815,55 @@ async function handleUnequipItem(session: Session, slot: EquipmentSlot, sequence
   broadcastChat("Equipment", `${session.player.name} removeu ${result.item.item.name}.`);
 }
 
+async function handleAllocateStat(session: Session, stat: StatName, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastStatAt < minStatMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_stats",
+      message: "Atributo enviado rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastStatAt = now;
+
+  const result = applyStatAllocationIntent(session.player, session.stats, stat);
+
+  if (!result.ok) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "stat_denied",
+      message: result.error === "no_points" ? "Sem pontos de atributo." : "Atributo recusado.",
+    });
+    return;
+  }
+
+  session.player = result.entity;
+  session.stats = result.stats;
+  await saveSession(session);
+  sendStats(session);
+  broadcastEntities();
+  broadcastChat("Atributos", `${session.player.name} aumentou ${stat}.`);
+}
+
 function sendProgress(session: Session): void {
   send(session, {
     type: "player.progress",
     progress: session.progress,
+  });
+}
+
+function sendStats(session: Session): void {
+  send(session, {
+    type: "player.stats",
+    stats: session.stats,
   });
 }
 
@@ -821,6 +878,7 @@ async function saveSession(session: Session): Promise<void> {
     bank: session.bank,
     equipment: session.equipment,
     progress: session.progress,
+    stats: session.stats,
     quests: session.quests,
   });
 }
@@ -838,10 +896,17 @@ function updateQuestProgressForNpcDefeat(session: Session, npc: EntitySnapshot):
     broadcastChat("Quest", `${session.player.name} completou ${quest.title}.`);
   }
 
+  const previousLevel = session.progress.level;
   const rewards = claimCompletedQuestRewards(session.progress, session.inventory, session.quests);
   session.progress = rewards.progress;
   session.inventory = rewards.inventory;
   session.quests = rewards.quests;
+
+  if (session.progress.level > previousLevel) {
+    session.stats = grantStatPoints(session.stats, session.progress.level - previousLevel);
+    sendStats(session);
+    broadcastChat("Progresso", `${session.player.name} recebeu pontos de atributo por subir de level.`);
+  }
 
   for (const quest of rewards.claimed) {
     broadcastChat("Quest", `${session.player.name} recebeu recompensa de ${quest.title}.`);
@@ -961,7 +1026,7 @@ function handleCastSpell(session: Session, spellId: string, sequence: number): v
   session.lastSequence = sequence;
   session.lastSpellAt[spellId] = now;
 
-  const result = applySpellCastIntent(session.player, spellId, [...npcs.values()], starterMap);
+  const result = applySpellCastIntent(session.player, spellId, [...npcs.values()], starterMap, getStatsSpellDamageBonus(session.stats));
 
   if (!result) {
     send(session, {
@@ -984,14 +1049,21 @@ function handleCastSpell(session: Session, spellId: string, sequence: number): v
 
 function handleNpcDefeat(session: Session, npc: EntitySnapshot): void {
   broadcastChat("Combate", `${npc.name} foi derrotado.`);
+  const previousLevel = session.progress.level;
   const award = awardNpcDefeat(session.progress, npc);
   session.progress = award.progress;
+
+  if (session.progress.level > previousLevel) {
+    session.stats = grantStatPoints(session.stats, session.progress.level - previousLevel);
+    sendStats(session);
+  }
+
   sendProgress(session);
   void saveSession(session);
   broadcastChat("Progresso", `${session.player.name} ganhou ${award.xpGained} XP e ${award.goldGained} gold.`);
 
   if (award.leveledUp) {
-    broadcastChat("Progresso", `${session.player.name} avancou para o level ${session.progress.level}.`);
+    broadcastChat("Progresso", `${session.player.name} avancou para o level ${session.progress.level} e recebeu pontos de atributo.`);
   }
 
   updateQuestProgressForNpcDefeat(session, npc);

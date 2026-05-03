@@ -53,6 +53,19 @@ export const PlayerProgressSchema = z.object({
 
 export type PlayerProgress = z.infer<typeof PlayerProgressSchema>;
 
+export const StatNameSchema = z.enum(["strength", "intelligence", "vitality"]);
+
+export type StatName = z.infer<typeof StatNameSchema>;
+
+export const PlayerStatsSchema = z.object({
+  strength: z.number().int().nonnegative(),
+  intelligence: z.number().int().nonnegative(),
+  vitality: z.number().int().nonnegative(),
+  points: z.number().int().nonnegative(),
+});
+
+export type PlayerStats = z.infer<typeof PlayerStatsSchema>;
+
 export const ShopOfferSchema = z.object({
   item: ItemStackSchema,
   priceGold: z.number().int().nonnegative(),
@@ -187,6 +200,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
+    type: z.literal("input.allocateStat"),
+    stat: StatNameSchema,
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
     type: z.literal("chat.send"),
     text: z.string().trim().min(1).max(180),
   }),
@@ -239,6 +257,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     bank: z.array(ItemStackSchema),
     equipment: EquipmentStateSchema,
     progress: PlayerProgressSchema,
+    stats: PlayerStatsSchema,
     shopOffers: z.array(ShopOfferSchema),
     quests: z.array(QuestStateSchema),
     spells: z.array(SpellDefinitionSchema),
@@ -271,6 +290,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("player.progress"),
     progress: PlayerProgressSchema,
+  }),
+  z.object({
+    type: z.literal("player.stats"),
+    stats: PlayerStatsSchema,
   }),
   z.object({
     type: z.literal("shop.offers"),
