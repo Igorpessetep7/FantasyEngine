@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
@@ -19,6 +19,7 @@ const minCraftMs = 400;
 const minEquipmentMs = 300;
 const minStatMs = 250;
 const minClassMs = 500;
+const minInteractMs = 300;
 
 interface Session {
   id: string;
@@ -43,6 +44,7 @@ interface Session {
   lastEquipmentAt: number;
   lastStatAt: number;
   lastClassAt: number;
+  lastInteractAt: number;
   lastSpellAt: Record<string, number>;
   lastSequence: number;
 }
@@ -140,6 +142,7 @@ function createSession(socket: WebSocket): Session {
     lastEquipmentAt: 0,
     lastStatAt: 0,
     lastClassAt: 0,
+    lastInteractAt: 0,
     lastSpellAt: {},
     lastSequence: 0,
   };
@@ -195,6 +198,9 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
         return;
       case "input.chooseClass":
         await handleChooseClass(session, message.classId, message.sequence);
+        return;
+      case "input.interactNpc":
+        handleInteractNpc(session, message.npcId, message.sequence);
         return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
@@ -921,6 +927,53 @@ async function handleChooseClass(session: Session, classId: ClassId, sequence: n
   broadcastChat("Classes", `${session.player.name} escolheu ${session.playerClass.name}.`);
 }
 
+function handleInteractNpc(session: Session, npcId: string, sequence: number): void {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastInteractAt < minInteractMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_interact",
+      message: "Interacao enviada rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastInteractAt = now;
+
+  const npc = npcs.get(npcId);
+
+  if (!npc || npc.hp <= 0) {
+    send(session, {
+      type: "server.error",
+      code: "unknown_npc",
+      message: "NPC indisponivel.",
+    });
+    return;
+  }
+
+  const result = applyNpcInteractionIntent(session.player, npc);
+
+  if (!result.ok || !result.dialogue) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "interaction_denied",
+      message: npcInteractionErrorMessage(result.error),
+    });
+    return;
+  }
+
+  send(session, {
+    type: "npc.dialogue",
+    dialogue: result.dialogue,
+  });
+}
+
 function sendProgress(session: Session): void {
   send(session, {
     type: "player.progress",
@@ -1073,6 +1126,17 @@ function classChoiceErrorMessage(error: string | undefined): string {
       return "Classe indisponivel.";
     default:
       return "Escolha de classe recusada.";
+  }
+}
+
+function npcInteractionErrorMessage(error: string | undefined): string {
+  switch (error) {
+    case "out_of_range":
+      return "NPC fora de alcance.";
+    case "not_interactive":
+      return "Este NPC nao possui dialogo.";
+    default:
+      return "Interacao recusada.";
   }
 }
 

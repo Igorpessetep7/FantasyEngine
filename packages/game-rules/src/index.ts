@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDisposition, PlayerClass, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
+import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDialogue, NpcDisposition, PlayerClass, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -39,6 +39,7 @@ export interface NpcDefinition {
   goldReward: number;
   respawnMs: number;
   loot: ItemStack[];
+  dialogue: string[];
 }
 
 export const starterNpcDefinitions: Record<string, NpcDefinition> = {
@@ -52,6 +53,7 @@ export const starterNpcDefinitions: Record<string, NpcDefinition> = {
     goldReward: 3,
     respawnMs: 5000,
     loot: [{ itemId: "slime-gel", name: "Gel de Slime", quantity: 1 }],
+    dialogue: [],
   },
   guard: {
     npcDefinitionId: "guard",
@@ -63,6 +65,7 @@ export const starterNpcDefinitions: Record<string, NpcDefinition> = {
     goldReward: 8,
     respawnMs: 7000,
     loot: [{ itemId: "iron-token", name: "Ficha de Ferro", quantity: 2 }],
+    dialogue: [],
   },
   guide: {
     npcDefinitionId: "guide",
@@ -74,6 +77,7 @@ export const starterNpcDefinitions: Record<string, NpcDefinition> = {
     goldReward: 0,
     respawnMs: 0,
     loot: [],
+    dialogue: ["Bem-vindo ao campo inicial. Escolha uma classe, treine contra Slimes e guarde seus itens importantes no banco."],
   },
 };
 
@@ -985,4 +989,40 @@ export function getStatsSpellDamageBonus(stats: PlayerStats): number {
 
 function isHostileTarget(entity: EntitySnapshot): boolean {
   return entity.kind !== "npc" || entity.disposition === "hostile";
+}
+
+export interface NpcInteractionResult {
+  ok: boolean;
+  dialogue?: NpcDialogue;
+  error?: "out_of_range" | "not_interactive";
+}
+
+export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySnapshot): NpcInteractionResult {
+  const distance = Math.abs(entity.x - npc.x) + Math.abs(entity.y - npc.y);
+
+  if (distance > 1) {
+    return {
+      ok: false,
+      error: "out_of_range",
+    };
+  }
+
+  const definition = getNpcDefinitionForEntity(npc);
+  const text = definition?.dialogue[0];
+
+  if (!text) {
+    return {
+      ok: false,
+      error: "not_interactive",
+    };
+  }
+
+  return {
+    ok: true,
+    dialogue: {
+      npcId: npc.id,
+      npcName: npc.name,
+      text,
+    },
+  };
 }

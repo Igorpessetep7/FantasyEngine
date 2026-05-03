@@ -22,6 +22,14 @@ export type ItemStack = z.infer<typeof ItemStackSchema>;
 
 export const ItemQuantitySchema = z.number().int().positive().max(9999);
 
+export const NpcDialogueSchema = z.object({
+  npcId: z.string(),
+  npcName: z.string(),
+  text: z.string(),
+});
+
+export type NpcDialogue = z.infer<typeof NpcDialogueSchema>;
+
 export const MapItemSnapshotSchema = z.object({
   id: z.string(),
   item: ItemStackSchema,
@@ -231,6 +239,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
+    type: z.literal("input.interactNpc"),
+    npcId: z.string().min(1).max(80),
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
     type: z.literal("chat.send"),
     text: z.string().trim().min(1).max(180),
   }),
@@ -329,6 +342,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     type: z.literal("player.class"),
     playerClass: PlayerClassSchema,
     stats: PlayerStatsSchema,
+  }),
+  z.object({
+    type: z.literal("npc.dialogue"),
+    dialogue: NpcDialogueSchema,
   }),
   z.object({
     type: z.literal("shop.offers"),

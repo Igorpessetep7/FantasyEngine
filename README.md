@@ -47,6 +47,7 @@ cp .env.example .env
 - `WASD` ou setas: movimento validado pelo servidor.
 - `Espaco`: ataque na entidade que estiver na direcao do personagem.
 - `E`: pegar item proximo validado pelo servidor.
+- `F`: interagir com NPC proximo validado pelo servidor.
 - `R`: coletar recurso proximo validado pelo servidor.
 - `1`: conjurar a primeira spell equipada.
 
@@ -54,6 +55,7 @@ cp .env.example .env
 
 - Movimento autoritativo.
 - NPCs com definicoes autoritativas de hostilidade, vida, dano, loot, recompensa e respawn.
+- Dialogo inicial de NPC com interacao por distancia validada no servidor.
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
 - Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.

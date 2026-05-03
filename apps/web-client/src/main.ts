@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type ClassId, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type ClassId, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type NpcDialogue, type PlayerClass, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -14,6 +14,7 @@ const craftingListElement = getElement("crafting-list");
 const equipmentListElement = getElement("equipment-list");
 const statsListElement = getElement("stats-list");
 const classListElement = getElement("class-list");
+const dialogueListElement = getElement("dialogue-list");
 const levelLabelElement = getElement("level-label");
 const goldLabelElement = getElement("gold-label");
 const xpLabelElement = getElement("xp-label");
@@ -35,6 +36,7 @@ let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let stats: PlayerStats = { strength: 1, intelligence: 1, vitality: 1, points: 0 };
 let playerClass: PlayerClass | null = null;
 let classOptions: PlayerClass[] = [];
+let currentDialogue: NpcDialogue | undefined;
 let shopOffers: ShopOffer[] = [];
 let quests: QuestState[] = [];
 let spells: SpellDefinition[] = [];
@@ -104,6 +106,7 @@ function connect(): void {
         drawBank();
         drawEquipment();
         drawClass();
+        drawDialogue();
         drawStats();
         drawProgress();
         drawShop();
@@ -150,6 +153,10 @@ function connect(): void {
         stats = message.stats;
         drawClass();
         drawStats();
+        return;
+      case "npc.dialogue":
+        currentDialogue = message.dialogue;
+        drawDialogue();
         return;
       case "shop.offers":
         shopOffers = message.shopOffers;
@@ -200,6 +207,11 @@ function bindInput(): void {
       if (event.key === "r" || event.key === "R") {
         event.preventDefault();
         gatherNearestResource();
+      }
+
+      if (event.key === "f" || event.key === "F") {
+        event.preventDefault();
+        interactNearestNpc();
       }
 
       if (event.key === "1" && spells[0]) {
@@ -459,6 +471,47 @@ function gatherNearestResource(): void {
 
   sequence += 1;
   send({ type: "input.gatherResource", resourceId: nearest.id, sequence });
+}
+
+function interactNearestNpc(): void {
+  const self = entitySnapshots.get(selfId);
+
+  if (!self) {
+    return;
+  }
+
+  const nearest = [...entitySnapshots.values()].find((entity) => entity.kind === "npc" && Math.abs(self.x - entity.x) + Math.abs(self.y - entity.y) <= 1);
+
+  if (!nearest) {
+    appendChat("Sistema", "Nenhum NPC ao alcance.");
+    return;
+  }
+
+  sequence += 1;
+  send({ type: "input.interactNpc", npcId: nearest.id, sequence });
+}
+
+function drawDialogue(): void {
+  dialogueListElement.replaceChildren();
+
+  if (!currentDialogue) {
+    const empty = document.createElement("span");
+    empty.textContent = "Nenhum dialogo ativo";
+    dialogueListElement.appendChild(empty);
+    return;
+  }
+
+  const entry = document.createElement("div");
+  entry.className = "dialogue-entry";
+
+  const speaker = document.createElement("span");
+  speaker.textContent = currentDialogue.npcName;
+
+  const text = document.createElement("span");
+  text.textContent = currentDialogue.text;
+
+  entry.append(speaker, text);
+  dialogueListElement.appendChild(entry);
 }
 
 function pickupNearestItem(): void {
