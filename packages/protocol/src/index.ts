@@ -16,6 +16,8 @@ export const ItemStackSchema = z.object({
 
 export type ItemStack = z.infer<typeof ItemStackSchema>;
 
+export const ItemQuantitySchema = z.number().int().positive().max(9999);
+
 export const MapItemSnapshotSchema = z.object({
   id: z.string(),
   item: ItemStackSchema,
@@ -108,6 +110,18 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     sequence: z.number().int().nonnegative().max(1_000_000_000),
   }),
   z.object({
+    type: z.literal("input.bankDeposit"),
+    itemId: z.string().min(1).max(80),
+    quantity: ItemQuantitySchema,
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
+    type: z.literal("input.bankWithdraw"),
+    itemId: z.string().min(1).max(80),
+    quantity: ItemQuantitySchema,
+    sequence: z.number().int().nonnegative().max(1_000_000_000),
+  }),
+  z.object({
     type: z.literal("chat.send"),
     text: z.string().trim().min(1).max(180),
   }),
@@ -156,6 +170,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     entities: z.array(EntitySnapshotSchema),
     mapItems: z.array(MapItemSnapshotSchema),
     inventory: z.array(ItemStackSchema),
+    bank: z.array(ItemStackSchema),
     progress: PlayerProgressSchema,
     shopOffers: z.array(ShopOfferSchema),
     quests: z.array(QuestStateSchema),
@@ -172,6 +187,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("inventory.update"),
     inventory: z.array(ItemStackSchema),
+  }),
+  z.object({
+    type: z.literal("bank.update"),
+    bank: z.array(ItemStackSchema),
   }),
   z.object({
     type: z.literal("player.progress"),

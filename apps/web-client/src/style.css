@@ -123,6 +123,7 @@ canvas {
 }
 
 #inventory-list,
+#bank-list,
 #shop-list,
 #quest-list,
 #spell-list {
@@ -207,7 +208,20 @@ canvas {
   align-items: center;
 }
 
-.inventory-item button {
+.bank-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.item-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.inventory-item button,
+.bank-item button {
   border: 0;
   border-radius: 6px;
   padding: 6px 8px;

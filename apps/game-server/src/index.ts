@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyItemUseIntent, applyMoveIntent, applyPurchaseIntent, applyQuestNpcDefeat, applySpellCastIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialProgress, createInitialQuests, createNpc, createPlayer, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
 import { decodeClientMessage, encodeServerMessage, type EntitySnapshot, type ItemStack, type MapItemSnapshot, type PlayerProgress, type QuestState, type ServerMessage } from "@fantasy-engine/protocol";
 
@@ -13,6 +13,7 @@ const minAttackMs = 500;
 const minPickupMs = 250;
 const minShopMs = 250;
 const minUseItemMs = 350;
+const minBankMs = 250;
 
 interface Session {
   id: string;
@@ -20,6 +21,7 @@ interface Session {
   socket: WebSocket;
   player: EntitySnapshot;
   inventory: ItemStack[];
+  bank: ItemStack[];
   progress: PlayerProgress;
   quests: QuestState[];
   lastMoveAt: number;
@@ -27,6 +29,7 @@ interface Session {
   lastPickupAt: number;
   lastShopAt: number;
   lastUseItemAt: number;
+  lastBankAt: number;
   lastSpellAt: Record<string, number>;
   lastSequence: number;
 }
@@ -60,6 +63,7 @@ webSocketServer.on("connection", (socket) => {
     entities: getEntities(),
     mapItems: getMapItems(),
     inventory: session.inventory,
+    bank: session.bank,
     progress: session.progress,
     shopOffers: starterShopOffers,
     quests: session.quests,
@@ -94,6 +98,7 @@ function createSession(socket: WebSocket): Session {
     socket,
     player: createPlayer(id, `Player-${id.slice(0, 4)}`),
     inventory: [],
+    bank: [],
     progress: createInitialProgress(),
     quests: createInitialQuests(),
     lastMoveAt: 0,
@@ -101,6 +106,7 @@ function createSession(socket: WebSocket): Session {
     lastPickupAt: 0,
     lastShopAt: 0,
     lastUseItemAt: 0,
+    lastBankAt: 0,
     lastSpellAt: {},
     lastSequence: 0,
   };
@@ -133,6 +139,12 @@ async function handleMessage(session: Session, payload: string): Promise<void> {
       case "input.castSpell":
         handleCastSpell(session, message.spellId, message.sequence);
         return;
+      case "input.bankDeposit":
+        await handleBankDeposit(session, message.itemId, message.quantity, message.sequence);
+        return;
+      case "input.bankWithdraw":
+        await handleBankWithdraw(session, message.itemId, message.quantity, message.sequence);
+        return;
       case "chat.send":
         broadcastChat(session.player.name, message.text);
         return;
@@ -152,12 +164,14 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
   const state = await characterRepository.loadOrCreate(clientId, {
     player: { ...session.player, name },
     inventory: session.inventory,
+    bank: session.bank,
     progress: session.progress,
     quests: session.quests,
   });
 
   session.player = state.player;
   session.inventory = state.inventory;
+  session.bank = state.bank;
   session.progress = state.progress;
   session.quests = state.quests.length > 0 ? state.quests : createInitialQuests();
 
@@ -168,6 +182,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     entities: getEntities(),
     mapItems: getMapItems(),
     inventory: session.inventory,
+    bank: session.bank,
     progress: session.progress,
     shopOffers: starterShopOffers,
     quests: session.quests,
@@ -386,6 +401,13 @@ function sendInventory(session: Session): void {
   });
 }
 
+function sendBank(session: Session): void {
+  send(session, {
+    type: "bank.update",
+    bank: session.bank,
+  });
+}
+
 async function handleShopBuy(session: Session, itemId: string, sequence: number): Promise<void> {
   const now = Date.now();
 
@@ -477,6 +499,82 @@ async function handleUseItem(session: Session, itemId: string, sequence: number)
   broadcastChat("Item", `${session.player.name} usou ${inventoryItem.name} e ${result.message}.`);
 }
 
+async function handleBankDeposit(session: Session, itemId: string, quantity: number, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastBankAt < minBankMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_bank",
+      message: "Banco usado rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastBankAt = now;
+
+  const result = applyBankDepositIntent(session.inventory, session.bank, itemId, quantity);
+
+  if (!result.ok || !result.item) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "bank_denied",
+      message: bankErrorMessage(result.error),
+    });
+    return;
+  }
+
+  session.inventory = result.inventory;
+  session.bank = result.bank;
+  await saveSession(session);
+  sendInventory(session);
+  sendBank(session);
+  broadcastChat("Banco", `${session.player.name} depositou ${result.item.quantity}x ${result.item.name}.`);
+}
+
+async function handleBankWithdraw(session: Session, itemId: string, quantity: number, sequence: number): Promise<void> {
+  const now = Date.now();
+
+  if (!session.clientId) {
+    return;
+  }
+
+  if (sequence <= session.lastSequence || now - session.lastBankAt < minBankMs) {
+    send(session, {
+      type: "server.error",
+      code: "rate_limited_bank",
+      message: "Banco usado rapido demais.",
+    });
+    return;
+  }
+
+  session.lastSequence = sequence;
+  session.lastBankAt = now;
+
+  const result = applyBankWithdrawIntent(session.inventory, session.bank, itemId, quantity);
+
+  if (!result.ok || !result.item) {
+    send(session, {
+      type: "server.error",
+      code: result.error ?? "bank_denied",
+      message: bankErrorMessage(result.error),
+    });
+    return;
+  }
+
+  session.inventory = result.inventory;
+  session.bank = result.bank;
+  await saveSession(session);
+  sendInventory(session);
+  sendBank(session);
+  broadcastChat("Banco", `${session.player.name} sacou ${result.item.quantity}x ${result.item.name}.`);
+}
+
 function sendProgress(session: Session): void {
   send(session, {
     type: "player.progress",
@@ -492,6 +590,7 @@ async function saveSession(session: Session): Promise<void> {
   await characterRepository.save(session.clientId, {
     player: session.player,
     inventory: session.inventory,
+    bank: session.bank,
     progress: session.progress,
     quests: session.quests,
   });
@@ -554,6 +653,17 @@ function itemUseErrorMessage(error: string | undefined): string {
       return "Este item ainda nao pode ser usado.";
     default:
       return "Item indisponivel.";
+  }
+}
+
+function bankErrorMessage(error: string | undefined): string {
+  switch (error) {
+    case "missing_item":
+      return "Item nao encontrado.";
+    case "invalid_quantity":
+      return "Quantidade invalida.";
+    default:
+      return "Operacao bancaria recusada.";
   }
 }
 

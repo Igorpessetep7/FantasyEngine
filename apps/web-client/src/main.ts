@@ -6,6 +6,7 @@ const gameElement = getElement("game");
 const statusElement = getElement("status");
 const chatLogElement = getElement("chat-log");
 const inventoryListElement = getElement("inventory-list");
+const bankListElement = getElement("bank-list");
 const shopListElement = getElement("shop-list");
 const questListElement = getElement("quest-list");
 const spellListElement = getElement("spell-list");
@@ -23,6 +24,7 @@ let mapSnapshot: MapSnapshot | undefined;
 const entitySnapshots = new Map<string, EntitySnapshot>();
 const mapItemSnapshots = new Map<string, MapItemSnapshot>();
 let inventory: ItemStack[] = [];
+let bank: ItemStack[] = [];
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let shopOffers: ShopOffer[] = [];
 let quests: QuestState[] = [];
@@ -72,6 +74,7 @@ function connect(): void {
         setEntities(message.entities);
         setMapItems(message.mapItems);
         inventory = message.inventory;
+        bank = message.bank;
         progress = message.progress;
         shopOffers = message.shopOffers;
         quests = message.quests;
@@ -80,6 +83,7 @@ function connect(): void {
         drawMapItems();
         drawEntities();
         drawInventory();
+        drawBank();
         drawProgress();
         drawShop();
         drawQuests();
@@ -96,6 +100,10 @@ function connect(): void {
       case "inventory.update":
         inventory = message.inventory;
         drawInventory();
+        return;
+      case "bank.update":
+        bank = message.bank;
+        drawBank();
         return;
       case "player.progress":
         progress = message.progress;
@@ -373,6 +381,9 @@ function drawInventory(): void {
     const label = document.createElement("span");
     label.textContent = `${item.quantity}x ${item.name}`;
 
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+
     if (item.itemId === "small-potion") {
       const button = document.createElement("button");
       button.type = "button";
@@ -381,13 +392,51 @@ function drawInventory(): void {
         sequence += 1;
         send({ type: "input.useItem", itemId: item.itemId, sequence });
       });
-      row.append(label, button);
-    } else {
-      row.append(label);
+      actions.appendChild(button);
     }
+
+    const depositButton = document.createElement("button");
+    depositButton.type = "button";
+    depositButton.textContent = "Banco";
+    depositButton.addEventListener("click", () => transferBank("deposit", item.itemId));
+    actions.appendChild(depositButton);
+
+    row.append(label, actions);
 
     inventoryListElement.appendChild(row);
   }
+}
+
+function drawBank(): void {
+  bankListElement.replaceChildren();
+
+  if (bank.length === 0) {
+    const empty = document.createElement("span");
+    empty.textContent = "Vazio";
+    bankListElement.appendChild(empty);
+    return;
+  }
+
+  for (const item of bank) {
+    const row = document.createElement("div");
+    row.className = "bank-item";
+
+    const label = document.createElement("span");
+    label.textContent = `${item.quantity}x ${item.name}`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Sacar";
+    button.addEventListener("click", () => transferBank("withdraw", item.itemId));
+
+    row.append(label, button);
+    bankListElement.appendChild(row);
+  }
+}
+
+function transferBank(action: "deposit" | "withdraw", itemId: string): void {
+  sequence += 1;
+  send({ type: action === "deposit" ? "input.bankDeposit" : "input.bankWithdraw", itemId, quantity: 1, sequence });
 }
 
 function drawProgress(): void {

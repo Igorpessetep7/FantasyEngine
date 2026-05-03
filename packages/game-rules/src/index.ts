@@ -335,6 +335,97 @@ export function applyItemUseIntent(entity: EntitySnapshot, itemId: string): Item
   };
 }
 
+export interface BankTransferResult {
+  ok: boolean;
+  inventory: ItemStack[];
+  bank: ItemStack[];
+  item?: ItemStack;
+  error?: "missing_item" | "invalid_quantity";
+}
+
+export function applyBankDepositIntent(inventory: ItemStack[], bank: ItemStack[], itemId: string, quantity: number): BankTransferResult {
+  return transferStack(inventory, bank, itemId, quantity);
+}
+
+export function applyBankWithdrawIntent(inventory: ItemStack[], bank: ItemStack[], itemId: string, quantity: number): BankTransferResult {
+  const result = transferStack(bank, inventory, itemId, quantity);
+
+  const nextResult: BankTransferResult = {
+    ok: result.ok,
+    inventory: result.bank,
+    bank: result.inventory,
+  };
+
+  if (result.item) {
+    nextResult.item = result.item;
+  }
+
+  if (result.error) {
+    nextResult.error = result.error;
+  }
+
+  return nextResult;
+}
+
+function transferStack(source: ItemStack[], target: ItemStack[], itemId: string, quantity: number): BankTransferResult {
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    return {
+      ok: false,
+      inventory: cloneStacks(source),
+      bank: cloneStacks(target),
+      error: "invalid_quantity",
+    };
+  }
+
+  const nextSource = cloneStacks(source);
+  const nextTarget = cloneStacks(target);
+  const sourceItem = nextSource.find((item) => item.itemId === itemId);
+
+  if (!sourceItem) {
+    return {
+      ok: false,
+      inventory: nextSource,
+      bank: nextTarget,
+      error: "missing_item",
+    };
+  }
+
+  if (sourceItem.quantity < quantity) {
+    return {
+      ok: false,
+      inventory: nextSource,
+      bank: nextTarget,
+      error: "invalid_quantity",
+    };
+  }
+
+  const moved = { itemId: sourceItem.itemId, name: sourceItem.name, quantity };
+  sourceItem.quantity -= quantity;
+
+  if (sourceItem.quantity === 0) {
+    nextSource.splice(nextSource.indexOf(sourceItem), 1);
+  }
+
+  const targetItem = nextTarget.find((item) => item.itemId === itemId);
+
+  if (targetItem) {
+    targetItem.quantity += quantity;
+  } else {
+    nextTarget.push({ ...moved });
+  }
+
+  return {
+    ok: true,
+    inventory: nextSource,
+    bank: nextTarget,
+    item: moved,
+  };
+}
+
+function cloneStacks(stacks: ItemStack[]): ItemStack[] {
+  return stacks.map((item) => ({ ...item }));
+}
+
 export interface SpellCastResult {
   spell: SpellDefinition;
   target: EntitySnapshot;

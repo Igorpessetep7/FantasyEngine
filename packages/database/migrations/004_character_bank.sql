@@ -1,0 +1,2 @@
+ALTER TABLE player_characters
+  ADD COLUMN IF NOT EXISTS bank JSONB NOT NULL DEFAULT '[]'::jsonb;

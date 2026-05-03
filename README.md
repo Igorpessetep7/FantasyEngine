@@ -56,6 +56,7 @@ cp .env.example .env
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
 - Inventario persistente por personagem.
+- Banco de itens persistente com deposito e saque validados pelo servidor.
 - XP, level e gold persistentes.
 - Shop com compras validadas pelo servidor.
 - Uso de pocao com cura e consumo validados pelo servidor.
