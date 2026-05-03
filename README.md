@@ -57,6 +57,7 @@ cp .env.example .env
 - NPCs com definicoes autoritativas de hostilidade, vida, dano, loot, recompensa e respawn.
 - Dialogo inicial de NPC com interacao por distancia validada no servidor.
 - Opcoes de dialogo com flags persistentes e recompensa unica validada no servidor.
+- Variaveis de evento persistentes com contador numerico atualizado apenas pelo servidor.
 - Combate com cooldown validado no servidor.
 - Drops e coleta com validacao de alcance.
 - Resources coletaveis com vida, cooldown, inventario e respawn autoritativos.

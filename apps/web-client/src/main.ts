@@ -1,6 +1,6 @@
 import "./style.css";
 import { Application, Container, Graphics, Text } from "pixi.js";
-import { decodeServerMessage, type ClassId, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type NpcDialogue, type PlayerClass, type PlayerEventFlags, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
+import { decodeServerMessage, type ClassId, type CraftingRecipe, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type MapSnapshot, type NpcDialogue, type PlayerClass, type PlayerEventFlags, type PlayerEventVariables, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ShopOffer, type SpellDefinition, type StatName } from "@fantasy-engine/protocol";
 
 const gameElement = getElement("game");
 const statusElement = getElement("status");
@@ -35,6 +35,7 @@ let equipment: EquipmentState = { weapon: null };
 let progress: PlayerProgress = { level: 1, xp: 0, xpToNext: 50, gold: 0 };
 let stats: PlayerStats = { strength: 1, intelligence: 1, vitality: 1, points: 0 };
 let eventFlags: PlayerEventFlags = {};
+let eventVariables: PlayerEventVariables = {};
 let playerClass: PlayerClass | null = null;
 let classOptions: PlayerClass[] = [];
 let currentDialogue: NpcDialogue | undefined;
@@ -94,6 +95,7 @@ function connect(): void {
         progress = message.progress;
         stats = message.stats;
         eventFlags = message.eventFlags;
+        eventVariables = message.eventVariables;
         playerClass = message.playerClass;
         classOptions = message.classOptions;
         shopOffers = message.shopOffers;
@@ -152,6 +154,10 @@ function connect(): void {
         return;
       case "player.eventFlags":
         eventFlags = message.eventFlags;
+        drawDialogue();
+        return;
+      case "player.eventVariables":
+        eventVariables = message.eventVariables;
         drawDialogue();
         return;
       case "player.class":
@@ -522,9 +528,17 @@ function drawDialogue(): void {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = option.label;
-    button.disabled = option.disabled || eventFlags["guide.starterKitClaimed"] === true;
+    button.disabled = option.disabled;
     button.addEventListener("click", () => chooseNpcDialogueOption(currentDialogue?.npcId, option.optionId));
     entry.appendChild(button);
+  }
+
+  const trainingMarks = eventVariables["guide.trainingMarks"];
+
+  if (typeof trainingMarks === "number" && !currentDialogue.text.startsWith("Treino registrado")) {
+    const variableLine = document.createElement("span");
+    variableLine.textContent = `Treino registrado: ${trainingMarks}/3`;
+    entry.appendChild(variableLine);
   }
 
   dialogueListElement.appendChild(entry);

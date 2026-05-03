@@ -26,6 +26,10 @@ export const PlayerEventFlagsSchema = z.record(z.string(), z.boolean());
 
 export type PlayerEventFlags = z.infer<typeof PlayerEventFlagsSchema>;
 
+export const PlayerEventVariablesSchema = z.record(z.string(), z.number().int().nonnegative().max(1_000_000));
+
+export type PlayerEventVariables = z.infer<typeof PlayerEventVariablesSchema>;
+
 export const NpcDialogueOptionSchema = z.object({
   optionId: z.string(),
   label: z.string(),
@@ -319,6 +323,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     progress: PlayerProgressSchema,
     stats: PlayerStatsSchema,
     eventFlags: PlayerEventFlagsSchema,
+    eventVariables: PlayerEventVariablesSchema,
     playerClass: PlayerClassSchema.nullable(),
     classOptions: z.array(PlayerClassSchema),
     shopOffers: z.array(ShopOfferSchema),
@@ -361,6 +366,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("player.eventFlags"),
     eventFlags: PlayerEventFlagsSchema,
+  }),
+  z.object({
+    type: z.literal("player.eventVariables"),
+    eventVariables: PlayerEventVariablesSchema,
   }),
   z.object({
     type: z.literal("player.class"),

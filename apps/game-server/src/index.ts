@@ -2,9 +2,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import { createCharacterRepository } from "@fantasy-engine/database";
-import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
+import { applyAttackIntent, applyBankDepositIntent, applyBankWithdrawIntent, applyClassChoiceIntent, applyCraftIntent, applyEquipItemIntent, applyItemUseIntent, applyMoveIntent, applyNpcDialogueOptionIntent, applyNpcInteractionIntent, applyPurchaseIntent, applyQuestNpcDefeat, applyResourceGatherIntent, applySpellCastIntent, applyStatAllocationIntent, applyUnequipItemIntent, awardNpcDefeat, canPickupItem, claimCompletedQuestRewards, createInitialEquipment, createInitialEventFlags, createInitialEventVariables, createInitialProgress, createInitialQuests, createInitialStats, createNpc, createPlayer, createResource, getEquipmentAttackBonus, getNpcAttackDamage, getNpcLoot, getNpcRespawnMs, getStatsAttackBonus, getStatsSpellDamageBonus, grantStatPoints, starterClasses, starterCraftingRecipes, starterShopOffers, starterSpells } from "@fantasy-engine/game-rules";
 import { starterMap } from "@fantasy-engine/map-format";
-import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerEventFlags, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
+import { decodeClientMessage, encodeServerMessage, type ClassId, type EntitySnapshot, type EquipmentSlot, type EquipmentState, type ItemStack, type MapItemSnapshot, type PlayerClass, type PlayerEventFlags, type PlayerEventVariables, type PlayerProgress, type PlayerStats, type QuestState, type ResourceSnapshot, type ServerMessage, type StatName } from "@fantasy-engine/protocol";
 
 const port = Number(process.env.GAME_SERVER_PORT ?? 8787);
 const tickMs = 100;
@@ -32,6 +32,7 @@ interface Session {
   progress: PlayerProgress;
   stats: PlayerStats;
   eventFlags: PlayerEventFlags;
+  eventVariables: PlayerEventVariables;
   playerClass: PlayerClass | null;
   quests: QuestState[];
   lastMoveAt: number;
@@ -91,6 +92,7 @@ webSocketServer.on("connection", (socket) => {
     progress: session.progress,
     stats: session.stats,
     eventFlags: session.eventFlags,
+    eventVariables: session.eventVariables,
     playerClass: session.playerClass,
     classOptions: starterClasses,
     shopOffers: starterShopOffers,
@@ -132,6 +134,7 @@ function createSession(socket: WebSocket): Session {
     progress: createInitialProgress(),
     stats: createInitialStats(),
     eventFlags: createInitialEventFlags(),
+    eventVariables: createInitialEventVariables(),
     playerClass: null,
     quests: createInitialQuests(),
     lastMoveAt: 0,
@@ -232,6 +235,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     progress: session.progress,
     stats: session.stats,
     eventFlags: session.eventFlags,
+    eventVariables: session.eventVariables,
     playerClass: session.playerClass,
     quests: session.quests,
   });
@@ -243,6 +247,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
   session.progress = state.progress;
   session.stats = state.stats;
   session.eventFlags = state.eventFlags;
+  session.eventVariables = state.eventVariables;
   session.playerClass = state.playerClass;
   session.quests = state.quests.length > 0 ? state.quests : createInitialQuests();
 
@@ -259,6 +264,7 @@ async function handleHello(session: Session, clientId: string, name: string): Pr
     progress: session.progress,
     stats: session.stats,
     eventFlags: session.eventFlags,
+    eventVariables: session.eventVariables,
     playerClass: session.playerClass,
     classOptions: starterClasses,
     shopOffers: starterShopOffers,
@@ -966,7 +972,7 @@ function handleInteractNpc(session: Session, npcId: string, sequence: number): v
     return;
   }
 
-  const result = applyNpcInteractionIntent(session.player, npc, session.eventFlags);
+  const result = applyNpcInteractionIntent(session.player, npc, session.eventFlags, session.eventVariables);
 
   if (!result.ok || !result.dialogue) {
     send(session, {
@@ -1013,7 +1019,7 @@ async function handleChooseNpcDialogueOption(session: Session, npcId: string, op
     return;
   }
 
-  const result = applyNpcDialogueOptionIntent(session.player, npc, session.eventFlags, optionId);
+  const result = applyNpcDialogueOptionIntent(session.player, npc, session.eventFlags, session.eventVariables, optionId);
 
   if (!result.ok || !result.dialogue) {
     send(session, {
@@ -1025,19 +1031,25 @@ async function handleChooseNpcDialogueOption(session: Session, npcId: string, op
   }
 
   session.eventFlags = result.eventFlags;
+  session.eventVariables = result.eventVariables;
 
   for (const item of result.rewards) {
     addInventoryItem(session.inventory, item);
   }
 
   await saveSession(session);
-  sendInventory(session);
+
+  if (result.rewards.length > 0) {
+    sendInventory(session);
+  }
+
   sendEventFlags(session);
+  sendEventVariables(session);
   send(session, {
     type: "npc.dialogue",
     dialogue: result.dialogue,
   });
-  broadcastChat("Evento", `${session.player.name} recebeu o kit inicial de ${npc.name}.`);
+  broadcastChat("Evento", result.rewards.length > 0 ? `${session.player.name} recebeu o kit inicial de ${npc.name}.` : `${session.player.name} registrou treino com ${npc.name}.`);
 }
 
 function sendProgress(session: Session): void {
@@ -1061,6 +1073,13 @@ function sendEventFlags(session: Session): void {
   });
 }
 
+function sendEventVariables(session: Session): void {
+  send(session, {
+    type: "player.eventVariables",
+    eventVariables: session.eventVariables,
+  });
+}
+
 async function saveSession(session: Session): Promise<void> {
   if (!session.clientId) {
     return;
@@ -1074,6 +1093,7 @@ async function saveSession(session: Session): Promise<void> {
     progress: session.progress,
     stats: session.stats,
     eventFlags: session.eventFlags,
+    eventVariables: session.eventVariables,
     playerClass: session.playerClass,
     quests: session.quests,
   });
@@ -1222,6 +1242,8 @@ function npcDialogueOptionErrorMessage(error: string | undefined): string {
       return "Recompensa ja recebida.";
     case "unknown_option":
       return "Opcao de dialogo indisponivel.";
+    case "variable_limit":
+      return "Variavel de evento atingiu o limite.";
     default:
       return "Opcao de dialogo recusada.";
   }

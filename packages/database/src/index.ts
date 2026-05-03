@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import type { EntitySnapshot, EquipmentState, ItemStack, PlayerClass, PlayerEventFlags, PlayerProgress, PlayerStats, QuestState } from "@fantasy-engine/protocol";
+import type { EntitySnapshot, EquipmentState, ItemStack, PlayerClass, PlayerEventFlags, PlayerEventVariables, PlayerProgress, PlayerStats, QuestState } from "@fantasy-engine/protocol";
 
 export interface CharacterState {
   player: EntitySnapshot;
@@ -9,6 +9,7 @@ export interface CharacterState {
   progress: PlayerProgress;
   stats: PlayerStats;
   eventFlags: PlayerEventFlags;
+  eventVariables: PlayerEventVariables;
   playerClass: PlayerClass | null;
   quests: QuestState[];
 }
@@ -54,6 +55,7 @@ class MemoryCharacterRepository implements CharacterRepository {
       progress: existing.progress,
       stats: existing.stats,
       eventFlags: existing.eventFlags,
+      eventVariables: existing.eventVariables,
       playerClass: existing.playerClass,
       quests: existing.quests,
     });
@@ -89,6 +91,7 @@ class PostgresCharacterRepository implements CharacterRepository {
         equipment JSONB NOT NULL DEFAULT '{"weapon": null}'::jsonb,
         stats JSONB NOT NULL DEFAULT '{"strength": 1, "intelligence": 1, "vitality": 1, "points": 0}'::jsonb,
         event_flags JSONB NOT NULL DEFAULT '{}'::jsonb,
+        event_variables JSONB NOT NULL DEFAULT '{}'::jsonb,
         player_class JSONB DEFAULT NULL,
           level INTEGER NOT NULL DEFAULT 1 CHECK (level > 0),
           xp INTEGER NOT NULL DEFAULT 0 CHECK (xp >= 0),
@@ -109,6 +112,7 @@ class PostgresCharacterRepository implements CharacterRepository {
         ADD COLUMN IF NOT EXISTS equipment JSONB NOT NULL DEFAULT '{"weapon": null}'::jsonb,
         ADD COLUMN IF NOT EXISTS stats JSONB NOT NULL DEFAULT '{"strength": 1, "intelligence": 1, "vitality": 1, "points": 0}'::jsonb,
         ADD COLUMN IF NOT EXISTS event_flags JSONB NOT NULL DEFAULT '{}'::jsonb,
+        ADD COLUMN IF NOT EXISTS event_variables JSONB NOT NULL DEFAULT '{}'::jsonb,
         ADD COLUMN IF NOT EXISTS player_class JSONB DEFAULT NULL,
         ADD COLUMN IF NOT EXISTS quests JSONB NOT NULL DEFAULT '[]'::jsonb;
     `);
@@ -117,7 +121,7 @@ class PostgresCharacterRepository implements CharacterRepository {
 
   async loadOrCreate(clientId: string, defaults: CharacterState): Promise<CharacterState> {
     const existing = await this.pool.query<StoredCharacterRow>(
-      "SELECT client_id, name, x, y, direction, hp, max_hp, inventory, bank, equipment, stats, event_flags, player_class, level, xp, xp_to_next, gold, quests FROM player_characters WHERE client_id = $1",
+      "SELECT client_id, name, x, y, direction, hp, max_hp, inventory, bank, equipment, stats, event_flags, event_variables, player_class, level, xp, xp_to_next, gold, quests FROM player_characters WHERE client_id = $1",
       [clientId],
     );
 
@@ -132,8 +136,8 @@ class PostgresCharacterRepository implements CharacterRepository {
   async save(clientId: string, state: CharacterState): Promise<void> {
     await this.pool.query(
       `
-        INSERT INTO player_characters (client_id, name, map_id, x, y, direction, hp, max_hp, inventory, bank, equipment, stats, event_flags, player_class, level, xp, xp_to_next, gold, quests, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15, $16, $17, $18, $19::jsonb, NOW())
+        INSERT INTO player_characters (client_id, name, map_id, x, y, direction, hp, max_hp, inventory, bank, equipment, stats, event_flags, event_variables, player_class, level, xp, xp_to_next, gold, quests, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15::jsonb, $16, $17, $18, $19, $20::jsonb, NOW())
         ON CONFLICT (client_id) DO UPDATE SET
           name = EXCLUDED.name,
           map_id = EXCLUDED.map_id,
@@ -147,6 +151,7 @@ class PostgresCharacterRepository implements CharacterRepository {
           equipment = EXCLUDED.equipment,
           stats = EXCLUDED.stats,
           event_flags = EXCLUDED.event_flags,
+          event_variables = EXCLUDED.event_variables,
           player_class = EXCLUDED.player_class,
           level = EXCLUDED.level,
           xp = EXCLUDED.xp,
@@ -169,6 +174,7 @@ class PostgresCharacterRepository implements CharacterRepository {
         JSON.stringify(state.equipment),
         JSON.stringify(state.stats),
         JSON.stringify(state.eventFlags),
+        JSON.stringify(state.eventVariables),
         JSON.stringify(state.playerClass),
         state.progress.level,
         state.progress.xp,
@@ -193,6 +199,7 @@ interface StoredCharacterRow {
   equipment: EquipmentState;
   stats: PlayerStats;
   event_flags: PlayerEventFlags;
+  event_variables: PlayerEventVariables;
   player_class: PlayerClass | null;
   level: number;
   xp: number;
@@ -220,6 +227,7 @@ function rowToState(row: StoredCharacterRow, runtimeEntityId: string, runtimeNam
     equipment: normalizeEquipment(row.equipment),
     stats: normalizeStats(row.stats),
     eventFlags: normalizeEventFlags(row.event_flags),
+    eventVariables: normalizeEventVariables(row.event_variables),
     playerClass: normalizePlayerClass(row.player_class),
     progress: {
       level: row.level,
@@ -239,6 +247,7 @@ function cloneState(state: CharacterState): CharacterState {
     equipment: normalizeEquipment(state.equipment),
     stats: normalizeStats(state.stats),
     eventFlags: normalizeEventFlags(state.eventFlags),
+    eventVariables: normalizeEventVariables(state.eventVariables),
     playerClass: normalizePlayerClass(state.playerClass),
     progress: { ...state.progress },
     quests: state.quests.map((quest) => ({
@@ -281,4 +290,12 @@ function normalizeEventFlags(eventFlags: PlayerEventFlags | undefined): PlayerEv
   }
 
   return Object.fromEntries(Object.entries(eventFlags).filter(([, value]) => typeof value === "boolean"));
+}
+
+function normalizeEventVariables(eventVariables: PlayerEventVariables | undefined): PlayerEventVariables {
+  if (!eventVariables || typeof eventVariables !== "object") {
+    return {};
+  }
+
+  return Object.fromEntries(Object.entries(eventVariables).filter(([, value]) => Number.isInteger(value) && value >= 0));
 }

@@ -1,5 +1,5 @@
 import { isBlocked } from "@fantasy-engine/map-format";
-import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDialogue, NpcDisposition, PlayerClass, PlayerEventFlags, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
+import type { ClassId, CraftingRecipe, Direction, EntitySnapshot, EquipmentSlot, EquipmentState, EquippedItem, ItemStack, MapItemSnapshot, MapSnapshot, NpcDialogue, NpcDisposition, PlayerClass, PlayerEventFlags, PlayerEventVariables, PlayerProgress, PlayerStats, QuestState, ResourceSnapshot, ShopOffer, SpellDefinition, StatName } from "@fantasy-engine/protocol";
 
 export interface MoveResult {
   moved: boolean;
@@ -118,6 +118,10 @@ export function createInitialEquipment(): EquipmentState {
 }
 
 export function createInitialEventFlags(): PlayerEventFlags {
+  return {};
+}
+
+export function createInitialEventVariables(): PlayerEventVariables {
   return {};
 }
 
@@ -1001,7 +1005,7 @@ export interface NpcInteractionResult {
   error?: "out_of_range" | "not_interactive";
 }
 
-export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySnapshot, eventFlags: PlayerEventFlags = {}): NpcInteractionResult {
+export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySnapshot, eventFlags: PlayerEventFlags = {}, eventVariables: PlayerEventVariables = {}): NpcInteractionResult {
   const distance = Math.abs(entity.x - npc.x) + Math.abs(entity.y - npc.y);
 
   if (distance > 1) {
@@ -1027,7 +1031,7 @@ export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySna
       npcId: npc.id,
       npcName: npc.name,
       text,
-      options: createDialogueOptions(npc, eventFlags),
+      options: createDialogueOptions(npc, eventFlags, eventVariables),
     },
   };
 }
@@ -1035,30 +1039,63 @@ export function applyNpcInteractionIntent(entity: EntitySnapshot, npc: EntitySna
 export interface NpcDialogueOptionResult {
   ok: boolean;
   eventFlags: PlayerEventFlags;
+  eventVariables: PlayerEventVariables;
   rewards: ItemStack[];
   dialogue?: NpcDialogue;
-  error?: "out_of_range" | "unknown_option" | "already_claimed";
+  error?: "out_of_range" | "unknown_option" | "already_claimed" | "variable_limit";
 }
 
-export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: EntitySnapshot, eventFlags: PlayerEventFlags, optionId: string): NpcDialogueOptionResult {
+export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: EntitySnapshot, eventFlags: PlayerEventFlags, eventVariables: PlayerEventVariables, optionId: string): NpcDialogueOptionResult {
   const distance = Math.abs(entity.x - npc.x) + Math.abs(entity.y - npc.y);
   const nextFlags = { ...eventFlags };
+  const nextVariables = { ...eventVariables };
 
   if (distance > 1) {
     return {
       ok: false,
       eventFlags: nextFlags,
+      eventVariables: nextVariables,
       rewards: [],
       error: "out_of_range",
     };
   }
 
-  if (npc.npcDefinitionId !== "guide" || optionId !== "guide-starter-kit") {
+  if (npc.npcDefinitionId !== "guide" || (optionId !== "guide-starter-kit" && optionId !== "guide-training-mark")) {
     return {
       ok: false,
       eventFlags: nextFlags,
+      eventVariables: nextVariables,
       rewards: [],
       error: "unknown_option",
+    };
+  }
+
+  if (optionId === "guide-training-mark") {
+    const currentMarks = nextVariables["guide.trainingMarks"] ?? 0;
+
+    if (currentMarks >= 3) {
+      return {
+        ok: false,
+        eventFlags: nextFlags,
+        eventVariables: nextVariables,
+        rewards: [],
+        error: "variable_limit",
+      };
+    }
+
+    nextVariables["guide.trainingMarks"] = currentMarks + 1;
+
+    return {
+      ok: true,
+      eventFlags: nextFlags,
+      eventVariables: nextVariables,
+      rewards: [],
+      dialogue: {
+        npcId: npc.id,
+        npcName: npc.name,
+        text: `Treino registrado: ${nextVariables["guide.trainingMarks"]}/3.`,
+        options: createDialogueOptions(npc, nextFlags, nextVariables),
+      },
     };
   }
 
@@ -1066,6 +1103,7 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
     return {
       ok: false,
       eventFlags: nextFlags,
+      eventVariables: nextVariables,
       rewards: [],
       error: "already_claimed",
     };
@@ -1076,6 +1114,7 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
   return {
     ok: true,
     eventFlags: nextFlags,
+    eventVariables: nextVariables,
     rewards: [
       { itemId: "small-potion", name: "Pocao Pequena", quantity: 2 },
       { itemId: "training-scroll", name: "Pergaminho de Treino", quantity: 1 },
@@ -1084,21 +1123,28 @@ export function applyNpcDialogueOptionIntent(entity: EntitySnapshot, npc: Entity
       npcId: npc.id,
       npcName: npc.name,
       text: "Aqui esta um kit inicial. Use com cuidado e continue treinando.",
-      options: createDialogueOptions(npc, nextFlags),
+      options: createDialogueOptions(npc, nextFlags, nextVariables),
     },
   };
 }
 
-function createDialogueOptions(npc: EntitySnapshot, eventFlags: PlayerEventFlags): NpcDialogue["options"] {
+function createDialogueOptions(npc: EntitySnapshot, eventFlags: PlayerEventFlags, eventVariables: PlayerEventVariables): NpcDialogue["options"] {
   if (npc.npcDefinitionId !== "guide") {
     return [];
   }
+
+  const trainingMarks = eventVariables["guide.trainingMarks"] ?? 0;
 
   return [
     {
       optionId: "guide-starter-kit",
       label: eventFlags["guide.starterKitClaimed"] ? "Kit inicial ja recebido" : "Receber kit inicial",
       disabled: eventFlags["guide.starterKitClaimed"] === true,
+    },
+    {
+      optionId: "guide-training-mark",
+      label: trainingMarks >= 3 ? "Treino registrado 3/3" : `Registrar treino (${trainingMarks}/3)`,
+      disabled: trainingMarks >= 3,
     },
   ];
 }
